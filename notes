@@ -1,0 +1,258 @@
+
+Thirdly, if you could confirm that my interpretation of the following
+header symbols is correct?
+
+1) cdp_t (conceptual data point): A timestamp
+2) pdx_t (packed index): An index into the packed vector
+3) dot_t: Dot product result
+4) daton: A single timestamp record (perhaps datum would be a more
+   appropriate name here)? I'm really not sure about this one.
+   If I understand correctly, the packed vector concept represents a
+   binary-valued vector, with each element in the packed vector
+   giving the index of a one-valued element in the expanded vector.
+   Yet as far as I can see, a daton has both a packed index (ordinate) and a
+   timestamp (abscissa). Given that the ordinate is always set to 1 in
+   favia.cpp, it seems that this could perhaps be used to encode the
+   number of photons in the bin, despite the fact that the conceptual
+   vector is by definition binary. 
+5) zerospike in favia.cpp:main() simply holds the value of the
+   correlation function evaluated at a lag of 0. As such, its type
+   should be dot_t, not pdx_t as listed in the source.
+
+
+Finally, I had a few questions about the implementation itself,
+
+1) Is there a reason you chose the name earlyize() instead of something
+   like shift_vec()? Does this function do anything beyond shifting the
+   vector?
+
+2) outwin() is part of the public interface yet I can't think of any
+   reason off the top of my head why this function would be necessary
+   outside of the library.
+
+3) The goal of tighten() is not entirely clear and refers to a grain
+   quantity, which is not well-defined in the code nor your description
+   of correlation normalization[2]. Would you mind providing a
+   clarification of what you mean by graining? Surely this is different
+   from the bin size.
+
+4) Can you clarify the difference between "static packed data" and
+   "useful packed data?"
+
+I hope these questions aren't too onerous. Feel free to tell me if any
+of these should be obvious.
+
+Hope things are going well. Thanks again!
+
+- Ben
+
+
+[1] http://goldnerlab.physics.umass.edu/git?p=fcs-tools.git;a=tree
+[2] http://www.av8n.com/physics/correlation-norm.htm
+
+
+//////////////////////////////////////////////////////////////////////
+
+
+On 02/17/2010 12:08 PM, Ben Gamari wrote:
+
+>> 1) cdp_t (conceptual data point): A timestamp
+
+OK.
+
+>> 2) pdx_t (packed index): An index into the packed vector
+
+OK.
+
+>> 3) dot_t: Dot product result
+
+OK.
+
+>> 4) daton: A single timestamp record (perhaps datum would be a more
+>>    appropriate name here)? I'm really not sure about this one.
+>>    If I understand correctly, the packed vector concept represents a
+>>    binary-valued vector, with each element in the packed vector
+>>    giving the index of a one-valued element in the expanded vector.
+>>    Yet as far as I can see, a daton has both a packed index (ordinate) and a
+>>    timestamp (abscissa). Given that the ordinate is always set to 1 in
+>>    favia.cpp, it seems that this could perhaps be used to encode the
+>>    number of photons in the bin, despite the fact that the conceptual
+>>    vector is by definition binary. 
+
+Not binary.  Not anymore.  We agree that the  raw data 
+comes in from the apparatus as binary, but as soon as it 
+gets coarse-grained it can become non-binary.
+
+If the documentation says binary, the documentation is
+wrong.  This wouldn't surprise me, since there was an
+earlier version that didn't do any coarse-graining....
+
+>> 5) zerospike in favia.cpp:main() simply holds the value of the
+>>    correlation function evaluated at a lag of 0. As such, its type
+>>    should be dot_t, not pdx_t as listed in the source.
+
+I'll take your word for it.  I haven't got time to
+think deeply about it at the moment.  Bugs of this
+sort wouldn't surprise me.
+ 
+>> Finally, I had a few questions about the implementation itself,
+>> 
+>> 1) Is there a reason you chose the name earlyize() instead of something
+>>    like shift_vec()? Does this function do anything beyond shifting the
+>>    vector?
+
+"shift" is ambiguous.  Things can get shifted either way,
+earlier or later.  Earlyize is unambiguous.  If you can
+think of a more graceful non-ambiguous name, that would
+be fine.
+
+>> 2) outwin() is part of the public interface yet I can't think of any
+>>    reason off the top of my head why this function would be necessary
+>>    outside of the library.
+
+I'm not fussy about making things private ... especially
+in early drafts of the software.  Feel free to change it.
+If it's a problem, it can always be changed back.
+
+>> 3) The goal of tighten() is not entirely clear and refers to a grain
+>>    quantity, which is not well-defined in the code nor your description
+>>    of correlation normalization[2]. Would you mind providing a
+>>    clarification of what you mean by graining? Surely this is different
+>>    from the bin size.
+
+Tighten takes a long vector that could have duplicate 
+abscissas and makes a (hopefully) shorter vector by
+combining the duplicates.  Abscissa = joint abscissa,
+ordinate = sum of ordinates.  Nothing fancy.
+
+For some reason I don't remember, at one point it
+seemed easier to do the coarse-graining in two
+steps, first coarse-graining the abscissas and
+then tightening.  Certainly not the only way of
+doing it.
+
+>> 4) Can you clarify the difference between "static packed data" and
+>>    "useful packed data?"
+
+If I recall correctly, the non-useful data is outside
+the bounds of the shifted start-time and end-time.
+The conceptual vector can be a subset, possibly even
+a rather small subset, of the raw data.
+
+
+//////////////////////////////////////////////////////////////////////
+
+
+Thank you very much for your timely response. Your responses were quite
+enlightening.
+
+The license question still remains, however. I know this seems like a
+formality, but if we are to release this code publicly it will be quite
+important that it's released under a suitable license. The GPL is my
+choice, but again, if you have any objection, feel no hesitation to
+state it. If you would prefer to wait in addressing this issue, it's not
+a problem and we can discuss it in the future.
+
+Also, just to confirm, have there been changes since the version you
+gave Lori?
+
+
+Excerpts from John Denker's message of Wed Feb 17 15:46:51 -0500 2010:
+> > On 02/17/2010 12:08 PM, Ben Gamari wrote:
+>> > > 4) daton: A single timestamp record (perhaps datum would be a more
+>> > >    appropriate name here)? I'm really not sure about this one.
+>> > >    If I understand correctly, the packed vector concept represents a
+>> > >    binary-valued vector, with each element in the packed vector
+>> > >    giving the index of a one-valued element in the expanded vector.
+>> > >    Yet as far as I can see, a daton has both a packed index (ordinate) and a
+>> > >    timestamp (abscissa). Given that the ordinate is always set to 1 in
+>> > >    favia.cpp, it seems that this could perhaps be used to encode the
+>> > >    number of photons in the bin, despite the fact that the conceptual
+>> > >    vector is by definition binary. 
+> > 
+> > Not binary.  Not anymore.  We agree that the  raw data 
+> > comes in from the apparatus as binary, but as soon as it 
+> > gets coarse-grained it can become non-binary.
+
+Ahh, this would explain it. I now understand that by coarse-graining,
+you are simply referring to binning (I apologize if that should have been
+obvious from the beginning).
+
+> > 
+> > If the documentation says binary, the documentation is
+> > wrong.  This wouldn't surprise me, since there was an
+> > earlier version that didn't do any coarse-graining....
+
+Ahh, alright.
+
+> > 
+>> > > 5) zerospike in favia.cpp:main() simply holds the value of the
+>> > >    correlation function evaluated at a lag of 0. As such, its type
+>> > >    should be dot_t, not pdx_t as listed in the source.
+> > 
+> > I'll take your word for it.  I haven't got time to
+> > think deeply about it at the moment.  Bugs of this
+> > sort wouldn't surprise me.
+
+Fair enough. It's not that important. -Wall might help here though.
+> >  
+>> > > Finally, I had a few questions about the implementation itself,
+>> > > 
+>> > > 1) Is there a reason you chose the name earlyize() instead of something
+>> > >    like shift_vec()? Does this function do anything beyond shifting the
+>> > >    vector?
+> > 
+> > "shift" is ambiguous.  Things can get shifted either way,
+> > earlier or later.  Earlyize is unambiguous.  If you can
+> > think of a more graceful non-ambiguous name, that would
+> > be fine.
+
+Alright, that is quite reasonable. I can't think of a better name and
+with proper documentation, I can see that earlyize() could convey the
+function's intent quite effectively.
+
+> > 
+>> > > 2) outwin() is part of the public interface yet I can't think of any
+>> > >    reason off the top of my head why this function would be necessary
+>> > >    outside of the library.
+> > 
+> > I'm not fussy about making things private ... especially
+> > in early drafts of the software.  Feel free to change it.
+> > If it's a problem, it can always be changed back.
+> > 
+Ahh, alright. I wasn't sure if there was something fundamental I was
+missing.
+
+
+>> > > 3) The goal of tighten() is not entirely clear and refers to a grain
+>> > >    quantity, which is not well-defined in the code nor your description
+>> > >    of correlation normalization[2]. Would you mind providing a
+>> > >    clarification of what you mean by graining? Surely this is different
+>> > >    from the bin size.
+> > 
+> > Tighten takes a long vector that could have duplicate 
+> > abscissas and makes a (hopefully) shorter vector by
+> > combining the duplicates.  Abscissa = joint abscissa,
+> > ordinate = sum of ordinates.  Nothing fancy.
+> > 
+Ahh, yes. Now knowing that we aren't in fact dealing with a binary
+vector, this makes much more sense. 
+
+> > For some reason I don't remember, at one point it
+> > seemed easier to do the coarse-graining in two
+> > steps, first coarse-graining the abscissas and
+> > then tightening.  Certainly not the only way of
+> > doing it.
+> > 
+>> > > 4) Can you clarify the difference between "static packed data" and
+>> > >    "useful packed data?"
+> > 
+> > If I recall correctly, the non-useful data is outside
+> > the bounds of the shifted start-time and end-time.
+> > The conceptual vector can be a subset, possibly even
+> > a rather small subset, of the raw data.
+> >
+Thanks! I'll hopefully have the first working set of
+autocorrelation/global fitting code by this weekend if you care to have
+a look. I hope things are going well. 
+
