@@ -123,7 +123,7 @@ int main(int argc, char** argv) {
   }
 
   pdx_t blksiz2(2*blocksize);
-  pdx_t zerospike(0);
+  dot_t zerospike(0);
   dot_t hits(0);
 
 // 'shift' is a number in the range [0, blksiz2]
