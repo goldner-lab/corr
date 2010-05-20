@@ -31,9 +31,21 @@ void usage() {
 "  MAX_EVENTS=1000  pretend input file has at most this many events\n"
 "               [0 means use all of the input file]\n"
 "  BLOCKSIZE=16 each new block is this many times bigger than previous [8]\n"
-"  MAX_TIME=??  largest lag (in seconds) to be considered [10]\n"
-"  MIN_TIME=??  smallest lag (in seconds) to be considered [1e-8]\n"
-
+"  MAX_LAG=??  largest lag (in seconds) to be considered [10]\n"
+"  MIN_LAG=??  smallest lag (in seconds) to be considered [1e-8]\n"
+"\n"
+"Input file format: 64 bit integers;  each integer is\n"
+"a timestamp, representing an event, i.e. the detection of a photon\n"
+"in units of 4 picoseconds\n"
+"\n"
+"Output file column headers are:\n"
+"  lag, loglag, dot, dotnormed, bar, residual\n"
+"where:\n"
+"  lag      is measured in seconds\n"
+"  loglag   is log10(lag)\n"
+"  dot      is the dot product, i.e. the correlation at this lag\n"
+"  bar      is an error bar, i.e. a measure of the uncertainty\n"
+"  residual is measured relative to an estimate of the large-lag asymptote\n"
 << endl;
 
 // Not implemented:
@@ -51,13 +63,15 @@ const char* Getenv(const char* key, const char* dflt){
 int main(int argc, char** argv) {
 
   double blocksize = atof(Getenv("BLOCKSIZE",  "8"));
-  double max_time = atof(Getenv("MAX_TIME",  "10"));
-  double min_time  = atof(Getenv("MIN_TIME",  "1e-8"));
+  double max_lag = atof(Getenv("MAX_LAG",  "10"));
+  double min_lag  = atof(Getenv("MIN_LAG",  "1e-8"));
   pdx_t max_events = atoi(Getenv("MAX_EVENTS", "0"));
   int verbose =  atoi(Getenv("VERBOSE",  "0"));
 
-  double raw_dt(4e-12);
-  cdp_t grain = cdp_t(min_time / raw_dt + .5);
+// If you change the following, be sure to change
+// the usage() message accordingly:
+  const double raw_dt(4e-12);
+  cdp_t grain = cdp_t(min_lag / raw_dt + .5);
 
   string fn("data007.dat");
   if (argc > 1) {
@@ -165,14 +179,14 @@ int main(int argc, char** argv) {
                 / coarse_bins;
 
     double dt(raw_dt * grain);
-    double time = shift * dt;
+    double lag = shift * dt;
     cerr << "top of loop:  shift: " << shift
       << "  grain: " << grain
-      << "  time: " << time
+      << "  lag: " << lag
       << "  denom: " << norm_denom
       << endl;
 
-    if (time > max_time) break;
+    if (lag > max_lag) break;
 
 // remap so data starts at zero, with coarse graining:
 
@@ -184,29 +198,31 @@ int main(int argc, char** argv) {
 
 // inner loop over all shifts at this resolution:
     for ( ; shift < blksiz2 ; shift++) {
-      time = shift * dt;
+      lag = shift * dt;
       if (0) cerr << "grain: " << grain
         << "  shift: " << shift
-        << "  time: " << shift*dt << endl;
+        << "  lag: " << shift*dt << endl;
       pv1.earlyize(shift);
       dot_t dot = pakdot(pv1, pv2);
       if (shift == 0) zerospike = dot;
       hits += dot;
-      double logtime(-9999);
-      if (time) logtime = log10(time);
+      double loglag(-9999);
+      if (lag) loglag = log10(lag);
       
       double dotnormed = double(dot) / norm_denom;
       double bar(0);
       if (dot) bar = dotnormed / sqrt(dot);
       double model = 1 - double(shift) / coarse_bins;
       double residual = dotnormed - model;
+// If you change this output statement, be sure to
+// change the usage() message to match:
       cout << boost::format
         ("%14.8e, %14.8e, %10Ld, %14.8e, %14.8e, %14.8e,\n")
-        % time % logtime % dot % dotnormed % bar % residual;
+        % lag % loglag % dot % dotnormed % bar % residual;
       if (dot) if (verbose)  cerr << boost::format
-        ("grain:%12Ld shift: %12Ld  time: %14.8e  dot: %10Ld"
+        ("grain:%12Ld shift: %12Ld  lag: %14.8e  dot: %10Ld"
                 "  dot/x: %14.8e\n")
-        % grain % shift % time % dot % (double(dot)/double(norm_denom));
+        % grain % shift % lag % dot % (double(dot)/double(norm_denom));
     }
   }
   
