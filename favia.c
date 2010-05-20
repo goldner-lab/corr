@@ -1,6 +1,6 @@
-// Driver program for testing sparse_dot.c
+// Perform correlations on FRET data.
+// See "usage" message below, or try ./favia -h
 //
-// Typical usage: VERBOSE=1 PERIODIC=1 WIDTH=100 ./paktest
 
 using namespace std;
 
@@ -16,6 +16,32 @@ using namespace std;
 #include "pakdot.h"
 #include <boost/format.hpp>
 
+void usage() {
+  cout << 
+"Perform correlations on FRET data.\n"
+"For conceptual foundations, see\n"
+"  http://www.av8n.com/physics/correlation-norm.htm\n"
+"\n"
+"Typical usage:\n"
+"  ./favia myfile.dat > myfile.csv\n"
+"\n"
+"Useful environment variables include the following.\n"
+"Defaults are shown in square brackets.\n"
+"  VERBOSE=1    turn on informational and debugging messages [0]\n" 
+"  MAX_EVENTS=1000  pretend input file has at most this many events\n"
+"               [0 means use all of the input file]\n"
+"  BLOCKSIZE=16 each new block is this many times bigger than previous [8]\n"
+"  MAX_TIME=??  largest lag (in seconds) to be considered [10]\n"
+"  MIN_TIME=??  smallest lag (in seconds) to be considered [1e-8]\n"
+
+<< endl;
+
+// Not implemented:
+// "  PERIODIC=1   use periodic boundary conditions\n"
+// "               [0 means pad with zeros]\n"
+
+}
+
 const char* Getenv(const char* key, const char* dflt){
   char* get = getenv(key);
   if (!get) return dflt;
@@ -28,14 +54,20 @@ int main(int argc, char** argv) {
   double max_time = atof(Getenv("MAX_TIME",  "10"));
   double min_time  = atof(Getenv("MIN_TIME",  "1e-8"));
   pdx_t max_events = atoi(Getenv("MAX_EVENTS", "0"));
-//  int width =    atoi(Getenv("WIDTH",    "100"));
   int verbose =  atoi(Getenv("VERBOSE",  "0"));
 
   double raw_dt(4e-12);
   cdp_t grain = cdp_t(min_time / raw_dt + .5);
 
   string fn("data007.dat");
-  if (argc > 1) fn = argv[1];
+  if (argc > 1) {
+    string arg = argv[1];
+    if (arg == "-h" || arg == "--h" || arg == "--help") {
+      usage();
+      exit(0);
+    }
+    fn = arg;
+  }
   struct stat stats;
   int rslt = stat(fn.c_str(), &stats);
   if (rslt) {
@@ -59,7 +91,8 @@ int main(int argc, char** argv) {
   vector<daton> raw_data(tot_events);
   vector<daton> cg_data(tot_events);          // coarse-grained data
 
-  {
+// read raw data into memory:
+  {                     
     pdx_t ii;
     for (ii=0; ii < tot_events; ii++) {
     if (!inch.good()) break;
@@ -68,6 +101,7 @@ int main(int argc, char** argv) {
       raw_data[ii].abscissa = temp;
       raw_data[ii].ordinate = 1;
     }
+    inch.close();
     if (ii != tot_events) {
       cerr << "Bad count: " << ii << "  " << tot_events << endl;
       exit(1);
