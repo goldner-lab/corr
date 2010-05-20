@@ -1,0 +1,67 @@
+#! /usr/bin/perl -w
+
+use strict;
+use Symbol;
+use IO::Handle;
+
+
+main: {
+
+my $plotme = <<EoF;
+
+PSblack=0
+red=1		## for PS or X
+green=2		## for PS or X
+blue=3		## for PS or X
+magenta=4       ## for X
+cyan=5          ## for X
+Xbrown=6        ## for X only
+PSyellow=6	## for PS only
+Xyellow=7	## for X only  (7 is almost black for PS)
+wid=3		## linewidth for PS
+
+set key off
+
+## #x-x# set terminal postscript eps color 40
+#x-x# set terminal svg size 1000,500
+#x-x# set size 1,1
+#x-x# set output "OFN"
+set pointsize 1
+set datafile separator ","
+
+plot [-4:1.5] [-0.005:0.005] "IFN" using 2:6:5 w errorline ps 0 lt blue, \\
+      "IFN" using 2:6 w line lt red lw 2
+
+set output
+EoF
+##################################################
+
+  my $ifn = $ARGV[0]; $ARGV[0]='';
+  if (!defined $ifn) {
+    die "Usage: plotit <infile.csv> <outfile.svg>\n";
+  }
+  $plotme =~ s/IFN/$ifn/g;
+
+  my $ofn = $ARGV[1]; $ARGV[1]='';
+  if (defined $ofn) {
+    $plotme =~ s'#x-x#''g;
+    $plotme =~ s/OFN/$ofn/;
+    $plotme =~ s'lt green'lt 7'g;
+##    $plotme =~ s'lt red'lt 7'g;
+##    $plotme =~ s'lt blue'lt 7'g;
+  }
+
+  my $plunit = Symbol::gensym;
+  my $plcmd = "gnuplot";
+  open($plunit, '|-', $plcmd) 
+        || die "Could not open pipe to '$plcmd'\n";
+
+  $plunit->autoflush(1);
+  print $plunit $plotme;
+  if (!defined($ofn)) {
+    while (my $line = <STDIN>) {
+      chomp $line;
+      print $plunit "$line\n";
+    }
+  }
+}
