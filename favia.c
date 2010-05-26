@@ -7,6 +7,7 @@ using namespace std;
 #include <sys/types.h>          /* for stat */
 #include <sys/stat.h>           /* for stat */
 #include <unistd.h>             /* for stat */
+#include "Getopt.h"
 #include <stdlib.h>             /* atoi, getenv */
 #include <values.h>             /* INT_MAX */
 #include <math.h>               /* log10() */
@@ -23,20 +24,28 @@ void usage() {
 "  http://www.av8n.com/physics/correlation-norm.htm\n"
 "\n"
 "Typical usage:\n"
-"  ./favia myfile.dat > myfile.csv\n"
+"  ./favia [options] > myfile.csv\n"
 "\n"
-"Useful environment variables include the following.\n"
+"Long-form options include the following.\n"
 "Defaults are shown in square brackets.\n"
-"  VERBOSE=1    turn on informational and debugging messages [0]\n" 
-"  MAX_EVENTS=1000  pretend input file has at most this many events\n"
-"               [0 means use all of the input file]\n"
-"  BLOCKSIZE=16 each new block is this many times bigger than previous [8]\n"
-"  MAX_LAG=??  largest lag (in seconds) to be considered [10]\n"
-"  MIN_LAG=??  smallest lag (in seconds) to be considered [1e-8]\n"
+"  --verbose            increase verbosity of debugging messages\n" 
+"  --xfile=sss          first input file [data007.dat]\n"
+"  --yfile=sss          second input file [clone of xfile]\n"
+"  --jiffy=ddd          unit of time (in s) for input timestamps [4e-12]\n"
+"  --max_events=iii     pretend input file has at most this many events\n"
+"                       [0 means use all of the input data]\n"
+"  --blocksize=iii      size of new grain relative to previous [8]\n"
+"  --long_lag=ddd       longest lag (in seconds) to be considered [10]\n"
+"  --short_lag=ddd      smallest lag (in seconds) to be considered [1e-8]\n"
+"  --help               print this message\n"
 "\n"
+"Note: sss=some string;  ddd=some double;  iii=some int.\n"
+"Note: for each long-form option there exists the corresponding\n"
+"short-form option, e.g. -j 4e-12\n"
+"\n" 
 "Input file format: 64 bit integers;  each integer is\n"
 "a timestamp, representing an event, i.e. the detection of a photon\n"
-"in units of 4 picoseconds\n"
+"in units of jiffies.\n"
 "\n"
 "Output file column headers are:\n"
 "  lag, loglag, dot, dotnormed, bar, residual\n"
@@ -60,28 +69,8 @@ const char* Getenv(const char* key, const char* dflt){
   return get;
 }
 
-int main(int argc, char** argv) {
 
-  double blocksize = atof(Getenv("BLOCKSIZE",  "8"));
-  double max_lag = atof(Getenv("MAX_LAG",  "10"));
-  double min_lag  = atof(Getenv("MIN_LAG",  "1e-8"));
-  pdx_t max_events = atoi(Getenv("MAX_EVENTS", "0"));
-  int verbose =  atoi(Getenv("VERBOSE",  "0"));
-
-// If you change the following, be sure to change
-// the usage() message accordingly:
-  const double raw_dt(4e-12);
-  cdp_t grain = cdp_t(min_lag / raw_dt + .5);
-
-  string fn("data007.dat");
-  if (argc > 1) {
-    string arg = argv[1];
-    if (arg == "-h" || arg == "--h" || arg == "--help") {
-      usage();
-      exit(0);
-    }
-    fn = arg;
-  }
+vector<daton> readfile(const string fn, const int max__events) {
   struct stat stats;
   int rslt = stat(fn.c_str(), &stats);
   if (rslt) {
@@ -90,9 +79,9 @@ int main(int argc, char** argv) {
     exit(1);
   }
   off_t size_b = stats.st_size;
-  pdx_t tot_events = size_b / sizeof(cdp_t);
-  if (max_events && tot_events > max_events) tot_events=max_events;
-  cerr << "total_events: " << tot_events << endl;
+  pdx_t tot__events = size_b / sizeof(cdp_t);
+  if (max__events && tot__events > max__events) tot__events=max__events;
+  cerr << "total_events: " << tot__events << endl;
 
   ifstream inch;
   inch.open(fn.c_str(), ios::in | ios::binary);
@@ -102,25 +91,116 @@ int main(int argc, char** argv) {
     exit(1);
   }
   cdp_t temp;
-  vector<daton> raw_data(tot_events);
-  vector<daton> cg_data(tot_events);          // coarse-grained data
+  vector<daton> raw__data(tot__events);
 
 // read raw data into memory:
   {                     
     pdx_t ii;
-    for (ii=0; ii < tot_events; ii++) {
+    for (ii=0; ii < tot__events; ii++) {
     if (!inch.good()) break;
       inch.read((char*)(&temp), sizeof(temp));
       if (inch.eof()) break;
-      raw_data[ii].abscissa = temp;
-      raw_data[ii].ordinate = 1;
+      raw__data[ii].abscissa = temp;
+      raw__data[ii].ordinate = 1;
     }
     inch.close();
-    if (ii != tot_events) {
-      cerr << "Bad count: " << ii << "  " << tot_events << endl;
+    if (ii != tot__events) {
+      cerr << "Error reading file '" << fn << "' ..." << endl;
+      cerr << "Bad count: " << ii << "  " << tot__events << endl;
       exit(1);
     }
   }
+  return raw__data;
+}
+
+int main(int argc, char** argv) {
+
+  int verbose(0);
+  string xfn;
+  string yfn;
+  int blocksize(8);
+  pdx_t max_events(0);
+
+  double long_lag(10);
+  double short_lag(1e-8);
+  double jiffy(4e-12);
+
+// Process commandline options 
+  const int ALT(128);
+  static struct option long_options[] = {
+    {"help",            0, NULL, 'h'},
+    {"blocksize",       1, NULL, 'b'},
+    {"jiffy",           1, NULL, 'j'},
+    {"long_lag",        1, NULL, 'l'},
+// synonym, since lowercase "l" looks too much like digit "1":
+    {"Long_lag",        1, NULL, 'L'},
+    {"max_events",      1, NULL, 'm'},
+    {"short_lag",       1, NULL, 's'},
+    {"xfile",           1, NULL, 'x'},
+    {"yfile",           1, NULL, 'y'},
+    {"verbose",         0, NULL, 'v'},
+  };
+
+  while(1) {
+    extern char* optarg;
+    char ch = getopt_long (argc, argv, long_options, NULL);
+    if (ch == -1)
+      break;
+    
+    if (optarg) if (*optarg == ':' || *optarg == '=') optarg++;
+    switch(ch) {
+      case 'h':
+        usage();
+        exit(0);
+      case 'b':
+        blocksize = atoi(optarg);
+        break;
+      case 'j':
+        jiffy = atof(optarg);
+        break;
+      case 'l':
+      case 'L':
+        long_lag = atof(optarg);
+        break;
+      case 'm':
+         max_events = atoi(optarg);
+         break;
+      case 's':
+        short_lag = atof(optarg);
+        break;
+      case 'v':
+        verbose++;
+        break;
+      case 'x':
+        xfn = optarg;
+        break;
+      case 'y':
+        yfn = optarg;
+        break;
+      default:
+        int chx(ch&~ALT);
+	fprintf(stderr, "Sorry, option %s'%c' not yet implemented.\n", 
+		ch!=chx? "ALT+" : "", chx);
+	exit(1);
+    }
+
+  }
+  if (xfn.length()==0) xfn = "data007.dat";
+  if (yfn.length()==0) yfn = xfn;
+  cerr << "xfn: " << xfn << endl;
+  cerr << "yfn: " << yfn << endl;
+  cerr << "jiffy: " << jiffy << endl;
+  cerr << "blocksize: " << blocksize << endl;
+  cerr << "max_events: " << max_events << endl;
+  cerr << "short_lag: " << short_lag << endl;
+  cerr << "long_lag: " << long_lag << endl;
+  cerr << "verbose: " << verbose << endl;
+
+  cdp_t grain = cdp_t(short_lag / jiffy + .5);
+
+  vector<daton> raw_data = readfile(xfn, max_events);
+  pdx_t tot_events = raw_data.size();
+  vector<daton> cg_data(tot_events);          // coarse-grained data
 
   pdx_t blksiz2(2*blocksize);
   dot_t zerospike(0);
@@ -130,7 +210,7 @@ int main(int argc, char** argv) {
 // a shift is essentially a coarse-grained version
 // of a lag.
   cdp_t shift(1);
-// note that shift * grain * raw_dt == realtime
+// note that shift * grain * jiffy == realtime
   
   cdp_t first_event = raw_data[0].abscissa;
   cdp_t last_event = raw_data[tot_events-1].abscissa;
@@ -158,9 +238,9 @@ int main(int argc, char** argv) {
     << "  span_bins: "  << span_bins
     << endl;
 
-  cerr   << "  start-time of first_event bin: " << first_event*raw_dt
-         << "  start-time of last_event bin: "  << last_event*raw_dt 
-         << "  span time: "    << span_bins*raw_dt
+  cerr   << "  start-time of first_event bin: " << first_event*jiffy
+         << "  start-time of last_event bin: "  << last_event*jiffy 
+         << "  span time: "    << span_bins*jiffy
          << endl;
 
   double spacing = span_bins / tot_events;
@@ -178,7 +258,7 @@ int main(int argc, char** argv) {
     double norm_denom = double(tot_events)*double(tot_events)
                 / coarse_bins;
 
-    double dt(raw_dt * grain);
+    double dt(jiffy * grain);
     double lag = shift * dt;
     cerr << "top of loop:  shift: " << shift
       << "  grain: " << grain
@@ -186,7 +266,7 @@ int main(int argc, char** argv) {
       << "  denom: " << norm_denom
       << endl;
 
-    if (lag > max_lag) break;
+    if (lag > long_lag) break;
 
 // remap so data starts at zero, with coarse graining:
 
