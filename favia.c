@@ -34,9 +34,10 @@ void usage() {
 "  --jiffy=ddd          unit of time (in s) for input timestamps [4e-12]\n"
 "  --max_events=iii     pretend input file has at most this many events\n"
 "                       [0 means use all of the input data]\n"
-"  --blocksize=iii      size of new grain relative to previous [8]\n"
+"  --blocksize=iii      number of grains per octave [8]\n"
 "  --long_lag=ddd       longest lag (in seconds) to be considered [10]\n"
 "  --short_lag=ddd      smallest lag (in seconds) to be considered [1e-8]\n"
+"  --zerospike          include point at lag=0 in the output\n"
 "  --help               print this message\n"
 "\n"
 "Note: sss=some string;  ddd=some double;  iii=some int.\n"
@@ -124,6 +125,7 @@ int main(int argc, char** argv) {
   double long_lag(10);
   double short_lag(1e-8);
   double jiffy(4e-12);
+  int spikeme(0);
 
 // Process commandline options 
   const int ALT(128);
@@ -136,9 +138,10 @@ int main(int argc, char** argv) {
     {"Long_lag",        1, NULL, 'L'},
     {"max_events",      1, NULL, 'm'},
     {"short_lag",       1, NULL, 's'},
+    {"verbose",         0, NULL, 'v'},
     {"xfile",           1, NULL, 'x'},
     {"yfile",           1, NULL, 'y'},
-    {"verbose",         0, NULL, 'v'},
+    {"zerospike",       0, NULL, 'z'},
   };
 
   while(1) {
@@ -177,6 +180,9 @@ int main(int argc, char** argv) {
       case 'y':
         yfn = optarg;
         break;
+      case 'z':
+        spikeme++;
+        break;
       default:
         int chx(ch&~ALT);
 	fprintf(stderr, "Sorry, option %s'%c' not yet implemented.\n", 
@@ -196,72 +202,100 @@ int main(int argc, char** argv) {
   cerr << "long_lag: " << long_lag << endl;
   cerr << "verbose: " << verbose << endl;
 
-  cdp_t grain = cdp_t(short_lag / jiffy + .5);
+// The "floor" here might make the smallest grain
+// slightly smaller than what was requested by -s.
+  double bins_per_short = floor(short_lag / jiffy);
+  double bins_per_long_req = ceil(long_lag / jiffy);
+  int doublings = ceil(log2(bins_per_long_req / bins_per_short));
+  cerr << "bins_per_short: " << bins_per_short 
+        << "  bins_per_long_req: " << bins_per_long_req
+        << "  ratio: " << bins_per_long_req / bins_per_short
+        << "  log2: "  << log2(bins_per_long_req / bins_per_short)
+        << "  doublings: "  << doublings
+        << endl;
 
-  vector<daton> raw_data = readfile(xfn, max_events);
-  pdx_t tot_events = raw_data.size();
-  vector<daton> cg_data(tot_events);          // coarse-grained data
+  double bins_per_long = bins_per_short * (1 << doublings);
+  cerr << "bins_per_long: " << bins_per_long
+        << "  ratio: " << double(bins_per_long)/bins_per_long_req
+        << "  ratio-1: " << double(bins_per_long)/bins_per_long_req - 1.
+        << endl;
 
-  pdx_t blksiz2(2*blocksize);
-  dot_t zerospike(0);
-  dot_t hits(0);
+  vector<daton> x_raw_data = readfile(xfn, max_events);
+  pdx_t x_tot_events = x_raw_data.size();
+// Allocate array for coarse-grained data, leaving plenty of room:
+  vector<daton> cg_data(x_tot_events);
 
-// 'shift' is a number in the range [0, blksiz2]
-// a shift is essentially a coarse-grained version
-// of a lag.
-  cdp_t shift(1);
-// note that shift * grain * jiffy == realtime
-  
-  cdp_t first_event = raw_data[0].abscissa;
-  cdp_t last_event = raw_data[tot_events-1].abscissa;
-  cdp_t lead_out = first_event;     // heuristic construction
-  cdp_t span_bins = 1 + last_event + lead_out;
+  cdp_t first_event = x_raw_data[0].abscissa;
+  cdp_t last_event = x_raw_data[x_tot_events-1].abscissa;
 
-// Here we have a conceptual vector with
-// 9 bins labeled 0 through 8 inclusive
-//   +----+----+----+----+----+----+----+----+----+
-//   |0   |1   |2   |3 * |4   |5 * |6   |7   |8   |9
-//   +----+----+----+----+----+----+----+----+----+
-//   [-- lead_in  --]              [-- lead_out --]
-//
-//  record_first   = 0
-//  record_last    = 8 = (N-1) = not very interesting
-//  N == span_bins = 9 = 1 + last_event + lead_out
-//  span_time      = N*dt
-//  first_event    = 3
-//  last_event     = 5
-//  lead_in        = 3
-//  lead_out       = 3 by heuristic construction;  not recorded by instrument
+// span of actual data:  not used
+// cdp_t dspan_bins = 1 + last_event - first_event;
+
+// augmented span:
+// includes the lead-in (time before the first event)
+// but does not include any lead-out (time after last event).
+  cdp_t aspan_bins = 1 + last_event - 0;
+
+  double longs_per_aspan = aspan_bins / bins_per_long;
+  const int reserved(1);
+  double longs_per_zone = floor(longs_per_aspan) - reserved;
+  double bins_per_zone = longs_per_zone * bins_per_long;
+  cerr << "longs_per_aspan: " << longs_per_aspan
+       << "  longs_per_zone: " << longs_per_zone
+       << "  bins_per_zone: " << bins_per_zone
+       << endl;
 
   cerr  << "  first_event: " << first_event
     << "  last_event: "  << last_event 
-    << "  span_bins: "  << span_bins
+    << "  aspan_bins: "  << aspan_bins
     << endl;
 
   cerr   << "  start-time of first_event bin: " << first_event*jiffy
          << "  start-time of last_event bin: "  << last_event*jiffy 
-         << "  span time: "    << span_bins*jiffy
+         << "  aug span time: "    << aspan_bins*jiffy
          << endl;
 
-  double spacing = span_bins / tot_events;
-  cerr << boost::format("average # of bins per event: %10.0f == %6.2e\n") 
-        % spacing % spacing;
+  {     // spacing is just FYI;  not used elsewhere
+   double spacing = aspan_bins / x_tot_events;
+   cerr << boost::format("approx avg # of bins per event: %10.0f == %6.2e\n") 
+         % spacing % spacing;
+  }
+
+// There are blocksize cells in an ordinary octave, but
+// the startup requirement requires twice that many.
+// Also, the typical octave uses shifts in the range
+// [blocksize, 2*blocksize-1] ... so we will have many
+// uses for blksiz2:
+  pdx_t blksiz2(2*blocksize);
+
+// 'shift' is a number in the range [0, blksiz2]
+// ... usually in the range [blocksize, blksiz2-1]
+// A shift is essentially a coarse-grained version
+// of a lag.
+// Note that shift * grainsize * jiffy == 
+//  start time (in seconds) of the grain at this shift
+  cdp_t shift(1);
+  if (spikeme) shift=0;         // output will include zero spike
+
+  dot_t zerospike(0);
+  dot_t hits(0);
+  cdp_t grainsize = cdp_t(short_lag / jiffy + .5);
 
 // main loop over all resolutions
   for (pdx_t kk=0; ; kk++) {
     if (kk) {
       shift /= 2;
-      grain *= 2;
+      grainsize *= 2;
     }
 
-    double coarse_bins = double(span_bins) / double(grain);
-    double norm_denom = double(tot_events)*double(tot_events)
+    double coarse_bins = double(aspan_bins) / double(grainsize);
+    double norm_denom = double(x_tot_events)*double(x_tot_events)
                 / coarse_bins;
 
-    double dt(jiffy * grain);
+    double dt(jiffy * grainsize);
     double lag = shift * dt;
     cerr << "top of loop:  shift: " << shift
-      << "  grain: " << grain
+      << "  grainsize: " << grainsize
       << "  lag: " << lag
       << "  denom: " << norm_denom
       << endl;
@@ -270,19 +304,19 @@ int main(int argc, char** argv) {
 
 // remap so data starts at zero, with coarse graining:
 
-    pdx_t small = tighten(first_event, grain, 
-                &raw_data[0], raw_data.size(), 
+    pdx_t small = tighten(first_event, grainsize, 
+                &x_raw_data[0], x_raw_data.size(), 
                 &cg_data[0]);
-    pakvec pv1(0, 1+last_event, &cg_data[0], small);
-    pakvec pv2(0, 1+last_event, &cg_data[0], small);
+    pakvec pv1(0, 1+last_event/grainsize, &cg_data[0], small);
+    pakvec pv2(0, 1+last_event/grainsize, &cg_data[0], small);
 
 // inner loop over all shifts at this resolution:
     for ( ; shift < blksiz2 ; shift++) {
       lag = shift * dt;
-      if (0) cerr << "grain: " << grain
+      if (0) cerr << "grainsize: " << grainsize
         << "  shift: " << shift
         << "  lag: " << shift*dt << endl;
-      pv1.earlyize(shift);
+      pv1.set_bin0time(shift);
       dot_t dot = pakdot(pv1, pv2);
       if (shift == 0) zerospike = dot;
       hits += dot;
@@ -300,9 +334,9 @@ int main(int argc, char** argv) {
         ("%14.8e, %14.8e, %10Ld, %14.8e, %14.8e, %14.8e,\n")
         % lag % loglag % dot % dotnormed % bar % residual;
       if (dot) if (verbose)  cerr << boost::format
-        ("grain:%12Ld shift: %12Ld  lag: %14.8e  dot: %10Ld"
+        ("grainsize:%12Ld shift: %12Ld  lag: %14.8e  dot: %10Ld"
                 "  dot/x: %14.8e\n")
-        % grain % shift % lag % dot % (double(dot)/double(norm_denom));
+        % grainsize % shift % lag % dot % (double(dot)/double(norm_denom));
     }
   }
   

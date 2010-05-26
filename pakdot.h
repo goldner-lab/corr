@@ -40,19 +40,28 @@
 // Useful feature:  You can shift the start-time of
 // the conceptual vector (i.e. the time corresponding
 // to bin 0 of the cv) after the pakvec is created,
-// by calling earlyize(tx).  This is efficient if
-// successive calls have nondecreasing tx values, or
-// the new tx value corresponds to a time near or 
-// before the first few elements of the event-list.
-// Beware that positive tx values shift all the
-// conceptual time-values _backwards_.
-// Do not mess with the value of cv0time directly.
-// It is however OK to change cvnp by direct assignment.
+// by calling set_bin0time(new0time).  This is efficient
+// if successive calls have nondecreasing new0time values.
+// It is also efficient if the new0time value corresponds 
+// to an early time, not beyond the first few events in
+// the packed vector.
+// Note the orientation(s) here: you would add cv0time to
+// the cv bin-time to find the timestamp of an event in 
+// the packed vector, whereas conversely you would subtract
+// cv0time from the timestamp of an event in the packed
+// vector to find the cv bin-time where the event belongs.
+//
+// Never mess with the value of cv0time directly;
+// always call set_cv0time() instead.
+// I could make cv0time private, and force everybody to use an
+// accessor method, but this would incur a performance penalty.
+//
+// In contrast, it is OK to change cvnp by direct assignment.
 
-
-//!! Restriction:  Beware:  Do not mess with the packed
-//!! data i.e. the list of event-times used by the 
-//!! constructor for the pakvec,
+//!! Restriction:  Beware:  Do not do anything that might
+//!! disturb the packed data (i.e. the list of event-times)
+//!! after the moment when a pointer to said data is
+//!! passed to the constructor for the pakvec,
 //!! unless/until you are through using the pakvec.
 //!! For example, if the list was in an I/O buffer, don't
 //!! re-use that buffer.  When in doubt, make a private
@@ -63,13 +72,15 @@
 //!! disadvantages.  Beware that the data is likely to
 //!! get copied to a new place if you resize() the 
 //!! vector to a larger size;  this invalidates any
-//!! old pointers, including the pointers used
-//!! internally by the pakvec routines.
+//!! old pointers, including the pointers stored within 
+//!! the pakvec.
 
 // The dot product routine assumes the pakvec has
 // _strictly_ increasing abscissas.  If in doubt,
 // use the tighten() routine to convert nondecreasing
 // abscissas to strictly increasing abscissas.
+
+#include <stdint.h>
 
 // cdp_t should be able to represent very large
 // numbers, corresponding to the number of bins
@@ -102,7 +113,7 @@ public:
 
 class pakvec{
 public:
-  cdp_t cv0time;	// time (in ticks) corresponding to
+  cdp_t cv0time;	// time (in jiffies) corresponding to
 			// bin 0 of the conceptual vector
   cdp_t cvnp;		// number of bins in the cv
   const daton* spdata;	// pointer to static packed data
@@ -111,11 +122,25 @@ public:
   pdx_t	upnp;		// number of useful points 
   const char* verbose;
 
+inline cdp_t get_cv0time() const {
+  return cv0time;
+}
+
+// directly using public member variable in innermost loop:
+// real    0m13.838s
+// user    0m13.545s
+// sys     0m0.124s
+//
+// using inline accessor method, no optimization:
+// real    0m18.296s
+// user    0m18.201s
+// sys     0m0.056s
+
 
 // Returns the number of items that can be skipped
 // when we are not using periodic boundary conditions.
-// That's because packed data items that correspond 
-// to negative bin numbers don't matter.
+// Some points are skippable because packed data items that 
+// correspond to negative bin numbers don't matter.
 inline pdx_t skippable(){
   for (pdx_t p1 = 0; p1 < upnp; p1++){
     if (updata[p1].abscissa >= cv0time) return p1;
@@ -124,16 +149,22 @@ inline pdx_t skippable(){
 }
 
 
-inline void earlyize(const cdp_t t){
-// when t is nonincreasing, we must recalculate
-// spnp and spdata _ab initio_
-// which is inefficient but the only correct approach
-  if (t < cv0time) {	
-    upnp = spnp;
-    updata = spdata;
-    cerr << "inefficient nonincreasing earlyize" << endl;
+inline void set_bin0time(const cdp_t new0time){
+// For efficiency, new0time should not be less than
+// the old cv0time.
+// To say the same thing the other way,
+// calling us with new0time less than cv0time
+// is grudgingly permitted but is inefficient, because
+// it forces us -- via skippable() -- to recalculate 
+// upnp and updata _ab initio_.
+// This recalculation is inefficient but necessary,
+// assuming you want to get the right answer.
+  if (new0time < cv0time) {	
+    upnp = spnp;        // inefficient: reset to safe value
+    updata = spdata;    // ditto
+    cerr << "inefficient retrograde set_bin0time" << endl;
   }
-  cv0time = t;
+  cv0time = new0time;
   pdx_t nnn = skippable();
   updata += nnn;  upnp -= nnn;
 }
@@ -178,7 +209,7 @@ inline pakvec(const cdp_t cv0time_, const cdp_t cvnp_,
   spdata = spdata_;
   updata = spdata_;
   upnp = spnp = size_;
-  earlyize(cv0time);		// do skipping if needed.
+  set_bin0time(cv0time);         // do skipping if needed.
   verbose = 0;
 }
 
