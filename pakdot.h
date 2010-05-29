@@ -108,7 +108,17 @@ typedef int64_t dot_t;
 class daton{
 public:
   cdp_t abscissa;
-  pdx_t ordinate;  
+  pdx_t ordinate;
+// trivial default constructor:
+  daton(){
+    abscissa = 0;
+    ordinate = 0;
+  }
+// basic constructor:
+  daton(const cdp_t abs, const pdx_t ord) {
+    abscissa = abs;
+    ordinate = ord;
+  }
 };
 
 class pakvec{
