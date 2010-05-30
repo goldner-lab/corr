@@ -91,7 +91,7 @@ vector<daton> readfile_bin(const string fn,
   off_t size_b = stats.st_size;
   pdx_t tot__events = size_b / sizeof(cdp_t);
   if (max__events && tot__events > max__events) tot__events=max__events;
-  cerr << "total_events: " << tot__events << endl;
+  cerr << "  total_events: " << tot__events << endl;
 
   ifstream inch;
   inch.open(fn.c_str(), ios::in | ios::binary);
@@ -184,6 +184,8 @@ vector<daton> readfile(const string fn, const int max__events) {
 
   inch.read((char*)(&temp), sizeof(temp));
   inch.close();
+  cerr << "Input file: " << fn << endl;
+
 // Ascii file should not have any nulls in it,
 // certainly not a null in the 8th byte of the file.
 // Conversely, the first timestamp in a binary file
@@ -265,6 +267,11 @@ int main(int argc, char** argv) {
       case 'z':
         spikeme++;
         break;
+      case '?':         // optarg() uses this for any unrecognized 
+                        //   option, and has already complained about it.
+        cerr << "For help, try\n  " << argv[0]
+             << " --help" << endl;
+        exit(1);
       default:
         int chx(ch&~ALT);
 	fprintf(stderr, "Sorry, option %s'%c' not yet implemented.\n", 
@@ -277,18 +284,20 @@ int main(int argc, char** argv) {
   if (yfn.length()==0) yfn = xfn;
   cerr << "xfn: " << xfn << endl;
   cerr << "yfn: " << yfn << endl;
-  cerr << "jiffy: " << jiffy << endl;
-  cerr << "fineness: " << fineness << endl;
+  cerr << "jiffy: " << jiffy << " s" << endl;
+  cerr << "fineness: " << fineness << " grains per octave"
+       " == " << fineness*log2(10) << " grains per decade"
+           << endl;
   cerr << "max_events: " << max_events << endl;
-  cerr << "short_lag: " << short_lag << endl;
-  cerr << "long_lag: " << long_lag << endl;
+  cerr << "short_lag: " << short_lag << " s" << endl;
+  cerr << "long_lag: "  << long_lag  << " s" << endl;
   cerr << "verbose: " << verbose << endl;
 
 // In this program, _mi_ means "... measured in units of ..."
 
 // The "floor" here might make the smallest grain
 // slightly smaller than what was requested by -s.
-  double shortgrain_mi_bins = floor(short_lag / jiffy);
+  cdp_t shortgrain_mi_bins = floor(short_lag / jiffy);
 
 // Be a little bit defensive:
   if (shortgrain_mi_bins < 1) shortgrain_mi_bins = 1;
@@ -315,7 +324,7 @@ int main(int argc, char** argv) {
         << "  octnox: "  << octnox
         << endl;
 
-  double longgrain_mi_bins = shortgrain_mi_bins * (1 << octnox);
+  cdp_t longgrain_mi_bins = shortgrain_mi_bins * (1 << octnox);
   cerr << "longgrain_mi_bins: " << longgrain_mi_bins
        << "  longgrain:  " << longgrain_mi_bins * jiffy
        << "  long/short: " << longgrain_mi_bins / shortgrain_mi_bins
@@ -325,18 +334,20 @@ int main(int argc, char** argv) {
 //??     << "  ratio-1: " << double(longgrain_mi_bins*jiffy)/long_lag - 1.
 
 
-class thingy{
+class channel{
 public:
   vector<daton> raw_data;  
   pdx_t tot_events;
   vector<daton> cg_data;
   cdp_t front_event;
   cdp_t back_event;
-  cdp_t aspan_mi_bins;
+//xxx  cdp_t bspan_mi_bins;
+  cdp_t qspan_mi_bins;
 
 // constructor:
-  thingy(const string fn, const int max__events,
-        const double jiffy){
+  channel(const string fn, const int max__events,
+        const double jiffy,
+        const cdp_t long_grain_mi_bins){
     raw_data = readfile(fn, max__events);
     tot_events = raw_data.size();
 
@@ -347,13 +358,32 @@ public:
     cg_data.resize(tot_events);
     front_event = raw_data[0].abscissa;
     back_event = raw_data[tot_events-1].abscissa;
+
+
+// span of actual data, 
+// i.e. the sum of the N-1 inter-event intervals
+// ... not used ...
+//  cdp_t dspan_mi_bins = 1 + back_event - front_event;
+
+    cerr << boost::format(
+       "  front_event: %16LLf == %13.6g bins == %13.6g s")
+        % front_event % double(front_event)
+        % (front_event*jiffy)
+         << endl;
+    cerr << boost::format(
+       "  back_event:  %16LLf == %13.6g bins == %13.6g s")
+        % back_event % double(back_event)
+        % (back_event*jiffy)
+         << endl;
+
+
 /*****************************
 
 Later, we will do a normalization calculation.  We will need to feed
-it an unbiased estimate of the Poisson rate.  If we had a definite
-number of points in a definite interval, this would be easy ... but we
-don't have a definite interval.  All we have is the timestamp of the
-last event.
+it an unbiased estimate of the Poisson rate for this channel.  If we
+had a definite number of points in a definite interval, this would be
+easy ... but we don't have a definite interval.  All we have is the
+timestamp of the last event.
 
 Rather than talking about the rate, let's talk about inverse rate,
 i.e. the time between pulses.  If we have N events, there are N+1
@@ -369,53 +399,50 @@ two things.  Our estimate of the rate will of course depend
 on our estimate of the leadout.
 
 As a first attempt, let's just use the N-1 inter-event intervals, then
-the average interval is (t_back - t_front) / (N-1).  That is a
+the average interval is (back_event - front_event) / (N-1).  That is a
 disaster when N=1, but we can improve it as follows.
 
-As a second (and final) attempt, we make use of the leadin interval.
-This is useful information, but it is not an unbiased estimate of the
-inter-event interval, since the logger presumably turned on in the
-middle of an interval, and this samples intervals in a biased way,
-favoring longer intervals.  So let's count it as half of an
-interval.  So our estimate of the average interval is then
-(t_back - 0) / (N-1/2).  
+As a second (and almost final) attempt, we make use of the leadin
+interval.  This is useful information, but it is not an unbiased
+estimate of the inter-event interval, since the logger presumably
+turned on in the middle of an interval, and this samples intervals in
+a biased way, favoring longer intervals.  So let's count it as half of
+an interval.  So our estimate of the average interval is then (back_event
+- 0) / (N-1/2).
 
 Note that when N=1, this implicitly estimates the leadout as being
 equal to the leadin.  More generally, this estimates the leadout as
-t_back / (2N-1).  For large N this converges to half of the average
+back_event / (2N-1).  For large N this converges to half of the average
 inter-event interval.  All this seems entirely reasonable.
+
+Finally, we add 1 to the span_mi_bins, because we want the span-time
+to cover all the time from the start of the front bin to the *end* of
+the back bin.
 
 ***************************/
 
-// span of actual data, 
-// i.e. the sum of the N-1 inter-event intervals
-// ... not used ...
-//  cdp_t dspan_mi_bins = 1 + back_event - front_event;
+// integer arithmetic here; remainder (if any) gets thrown away:
+    cdp_t leadout = back_event / (2*tot_events - 1);
+    cdp_t bspan_mi_bins = (back_event - 0) + leadout + 1;
+    qspan_mi_bins = long_grain_mi_bins * (bspan_mi_bins / long_grain_mi_bins);
 
-// augmented span:
-// includes the lead-in (before the first bin)
-// and includes all the way to the /end/ of the last bin
-// but does not include any lead-out (after last bin)
-    aspan_mi_bins = 1 + back_event - 0;
-    cerr  << "  front_event: " << front_event
-      << "  back_event: "  << back_event 
-      << "  aspan_mi_bins: "  << aspan_mi_bins
-      << endl;
-    cerr   << "  start-time of front_event bin: " << front_event*jiffy
-           << "  start-time of back_event bin: "  << back_event*jiffy 
-           << "  aug span time: "    << aspan_mi_bins*jiffy
-           << endl;
-    {     // spacing is just FYI;  not used elsewhere
-     double spacing = aspan_mi_bins / tot_events;
-     cerr << boost::format("approx avg spacing: "
-        "%10.0f == %6.2e bins per event\n") 
-           % spacing % spacing;
-    }
+    cerr << boost::format(
+       "  leadout:     %16LLf == %13.6g bins == %13.6g s")
+        % leadout % double(leadout)
+        % (leadout*jiffy)
+         << endl;
+
+ // spacing is just FYI;  not used elsewhere
+    double spacing = bspan_mi_bins / tot_events;
+    cerr << boost::format(
+       "  avg spacing: %16.0f == %13.6g bins == %13.6g s")
+          % spacing % double(spacing) % (spacing*jiffy)
+        << endl;
   }
-};      /* end class thingy */
+};      /* end class channel */
 
-  thingy x(xfn, max_events, jiffy);
-  thingy y(xfn, max_events, jiffy);
+  channel x(xfn, max_events, jiffy, longgrain_mi_bins);
+  channel y(yfn, max_events, jiffy, longgrain_mi_bins);
 
 // there are three requirements on the zone size:
 // *) Zonesize must be a multiple of the largest grain size.
@@ -426,20 +453,18 @@ inter-event interval.  All this seems entirely reasonable.
 // The treatment of X and Y is not symmetric, because 
 // only X gets lagged.
 
-  double aspan_mi_longs = x.aspan_mi_bins / longgrain_mi_bins;
-  const int reserved(1);
-  double zone_mi_longs = floor(aspan_mi_longs) - reserved;
-  double zone_mi_bins = zone_mi_longs * longgrain_mi_bins;
+   cdp_t zone_mi_bins = x.qspan_mi_bins;
+// Here is where we actually implement extended boundary conditions:
+// Reserve one long grain at the end:
+   zone_mi_bins -= longgrain_mi_bins;
+   if (zone_mi_bins > y.qspan_mi_bins) zone_mi_bins = y.qspan_mi_bins;
 
-  cerr << "aspan_mi_longs: " << aspan_mi_longs
-       << "  zone_mi_longs: " << zone_mi_longs
-       << "  zone_mi_bins: " << zone_mi_bins
-       << endl;
-
-// There are fineness cells in an ordinary octave, but
-// the startup requirement requires twice that many.
-// Also, the typical octave uses curlag_mi_grains values in 
-// the range [fineness, 2*fineness-1] ... so we will 
+// The fineness is the number of grains in an ordinary octave, but
+// the startup transient is a linear progression, not a geometric
+// or pseudogeometric progression, so it is not an octave at all,
+// and it requires 2*fineness grains.
+// Also, in the typical octave, curlag_mi_grains takes on 
+// values in the range [fineness, 2*fineness-1] ... so we will 
 // have many uses for fin2:
   pdx_t fin2(2*fineness);
 
@@ -473,10 +498,10 @@ inter-event interval.  All this seems entirely reasonable.
 //   curlag_mi_grains = ...
 //   curgrain_mi_bins = ...
 
-    double bogus_zone_mi_grains = double(x.aspan_mi_bins) / curgrain_mi_bins;
+    double zone_mi_grains = zone_mi_bins / curgrain_mi_bins;
 
     double norm_denom = double(x.tot_events)*double(y.tot_events)
-                / bogus_zone_mi_grains;
+                / zone_mi_grains;
 
     double curgrain_mi_sec(jiffy * curgrain_mi_bins);
     double lag = curlag_mi_grains * curgrain_mi_sec;
@@ -493,12 +518,12 @@ inter-event interval.  All this seems entirely reasonable.
     pdx_t x_small = tighten(x.front_event, curgrain_mi_bins, 
                 &x.raw_data[0], x.raw_data.size(), 
                 &x.cg_data[0]);
-    pakvec pv1(0, 1+x.back_event/curgrain_mi_bins, &x.cg_data[0], x_small);
+    pakvec pv1(0, zone_mi_bins/curgrain_mi_bins, &x.cg_data[0], x_small);
 
     pdx_t y_small = tighten(y.front_event, curgrain_mi_bins, 
                 &y.raw_data[0], y.raw_data.size(), 
                 &y.cg_data[0]);
-    pakvec pv2(0, 1+y.back_event/curgrain_mi_bins, &y.cg_data[0], y_small);
+    pakvec pv2(0, zone_mi_bins/curgrain_mi_bins, &y.cg_data[0], y_small);
 
 // inner loop over all lags, stepping grain by grain:
     for ( ; curlag_mi_grains < fin2 ; curlag_mi_grains++) {
@@ -517,7 +542,7 @@ inter-event interval.  All this seems entirely reasonable.
       
       double dotnormed = double(dot) / norm_denom;
       double bar(dot ? dotnormed / sqrt(dot) : 0);
-      double model = 1 - double(curlag_mi_grains) / bogus_zone_mi_grains;
+      double model = 1 - double(curlag_mi_grains) / zone_mi_grains;
       double residual = dotnormed - model;
 // If you change this output statement, be sure to
 // change the usage() message to match:
