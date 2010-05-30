@@ -313,21 +313,23 @@ int main(int argc, char** argv) {
 
 // --001111222222223333333333333333 ????
 
-  double long_req_mi_short = ceil(long_lag / (shortgrain_mi_bins * jiffy));
-  int octno(floor(log2(long_req_mi_short / fineness)));
+  cdp_t longlag_req_mi_shortg = ceil(long_lag / (shortgrain_mi_bins * jiffy));
+  int octno(floor(log2(double(longlag_req_mi_shortg) / fineness)));
   int octnox(octno > 0 ? octno : 0);
+  cdp_t longgrain_mi_bins = shortgrain_mi_bins * (1 << octnox);
+// round this up, so it covers the entire coarse-grained lag:
+  cdp_t longlag_mi_longg = ceil(long_lag / (longgrain_mi_bins * jiffy));
 
   cerr << "shortgrain_mi_bins: " << shortgrain_mi_bins 
-        << "  long_req_mi_short: " << long_req_mi_short
-        << "  log2: "  << log2(long_req_mi_short)
+        << "  longlag_req_mi_shortg: " << longlag_req_mi_shortg
+        << "  log2: "  << log2(longlag_req_mi_shortg)
         << "  octno: "  << octno
         << "  octnox: "  << octnox
         << endl;
 
-  cdp_t longgrain_mi_bins = shortgrain_mi_bins * (1 << octnox);
-  cerr << "longgrain_mi_bins: " << longgrain_mi_bins
-       << "  longgrain:  " << longgrain_mi_bins * jiffy
-       << "  long/short: " << longgrain_mi_bins / shortgrain_mi_bins
+  cerr << "longgrain: " << longgrain_mi_bins << " bins"
+       << " == " << longgrain_mi_bins / shortgrain_mi_bins << " shorts"
+       << " == " << longgrain_mi_bins * jiffy << " s"
         << endl;
 
 //??     << "  ratio: " << double(longgrain_mi_bins*jiffy)/long_lag
@@ -341,8 +343,10 @@ public:
   vector<daton> cg_data;
   cdp_t front_event;
   cdp_t back_event;
-//xxx  cdp_t bspan_mi_bins;
+  cdp_t bspan_mi_bins;
   cdp_t qspan_mi_bins;
+  double spacing_mi_bins;       // bins per event, average spacing
+                        // roughly speaking, inverse of the average rate
 
 // constructor:
   channel(const string fn, const int max__events,
@@ -423,8 +427,14 @@ the back bin.
 
 // integer arithmetic here; remainder (if any) gets thrown away:
     cdp_t leadout = back_event / (2*tot_events - 1);
-    cdp_t bspan_mi_bins = (back_event - 0) + leadout + 1;
+    bspan_mi_bins = (back_event - 0) + leadout + 1;
     qspan_mi_bins = long_grain_mi_bins * (bspan_mi_bins / long_grain_mi_bins);
+
+    cerr << boost::format(
+       "  qspan:       %16LLf == %13.6g bins == %13.6g s")
+        % qspan_mi_bins % double(qspan_mi_bins)
+        % (qspan_mi_bins*jiffy)
+         << endl;
 
     cerr << boost::format(
        "  leadout:     %16LLf == %13.6g bins == %13.6g s")
@@ -432,11 +442,10 @@ the back bin.
         % (leadout*jiffy)
          << endl;
 
- // spacing is just FYI;  not used elsewhere
-    double spacing = bspan_mi_bins / tot_events;
+    spacing_mi_bins = bspan_mi_bins / tot_events;
     cerr << boost::format(
        "  avg spacing: %16.0f == %13.6g bins == %13.6g s")
-          % spacing % double(spacing) % (spacing*jiffy)
+          % spacing_mi_bins % double(spacing_mi_bins) % (spacing_mi_bins*jiffy)
         << endl;
   }
 };      /* end class channel */
@@ -453,11 +462,23 @@ the back bin.
 // The treatment of X and Y is not symmetric, because 
 // only X gets lagged.
 
+   cdp_t longlag_mi_bins(longlag_mi_longg * longgrain_mi_bins);
    cdp_t zone_mi_bins = x.qspan_mi_bins;
 // Here is where we actually implement extended boundary conditions:
-// Reserve one long grain at the end:
-   zone_mi_bins -= longgrain_mi_bins;
+// Reserve one long_lag worth of room at the end:
+   zone_mi_bins -= longlag_mi_bins;
    if (zone_mi_bins > y.qspan_mi_bins) zone_mi_bins = y.qspan_mi_bins;
+   cerr << "zone: " << zone_mi_bins << " bins" 
+     << " == " << zone_mi_bins / shortgrain_mi_bins << " shorts"
+     << " == " << zone_mi_bins / longgrain_mi_bins << " longs"
+     << " == " << zone_mi_bins * jiffy << " s"
+     << endl;
+
+   cerr << "longlag: " << longlag_mi_bins << " bins" 
+     << " == " << longlag_mi_bins / shortgrain_mi_bins << " shorts"
+     << " == " << longlag_mi_bins / longgrain_mi_bins << " longs"
+     << " == " << longlag_mi_bins * jiffy << " s"
+     << endl;
 
 // The fineness is the number of grains in an ordinary octave, but
 // the startup transient is a linear progression, not a geometric
@@ -499,11 +520,12 @@ the back bin.
 //   curgrain_mi_bins = ...
 
     double zone_mi_grains = zone_mi_bins / curgrain_mi_bins;
-
-    double norm_denom = double(x.tot_events)*double(y.tot_events)
-                / zone_mi_grains;
-
     double curgrain_mi_sec(jiffy * curgrain_mi_bins);
+
+    double norm_denom =  zone_mi_grains
+          * (curgrain_mi_sec / (x.spacing_mi_bins*jiffy))
+          * (curgrain_mi_sec / (y.spacing_mi_bins*jiffy));
+                
     double lag = curlag_mi_grains * curgrain_mi_sec;
     cerr << "top of loop:  lag_mi_grains: " << curlag_mi_grains
       << "  curgrain_mi_bins: " << curgrain_mi_bins
@@ -537,23 +559,25 @@ the back bin.
       dot_t dot = pakdot(pv1, pv2);
       if (curlag_mi_grains == 0) zerospike = dot;
       hits += dot;
-      double loglag(-9999);
-      if (lag) loglag = log10(lag);
+      double fakelag(lag);
+      if (fakelag == 0.0) fakelag = jiffy/10.;
+      else if (fakelag < 0.0) fakelag = jiffy/100.;
+      double loglag(log10(fakelag));
       
       double dotnormed = double(dot) / norm_denom;
       double bar(dot ? dotnormed / sqrt(dot) : 0);
-      double model = 1 - double(curlag_mi_grains) / zone_mi_grains;
+      double model = 1.0;
       double residual = dotnormed - model;
 // If you change this output statement, be sure to
 // change the usage() message to match:
       *ouch << boost::format
         ("%14.8e, %14.8e, %10Ld, %14.8e, %14.8e, %14.8e,\n")
-        % lag % loglag % dot % dotnormed % bar % residual;
+        % fakelag % loglag % dot % dotnormed % bar % residual;
       if (dot) if (verbose)  cerr << boost::format
            ("curgrain_mi_bins:%12Ld curlag_mi_grains: %12Ld"
-              "  lag: %14.8e  dot: %10Ld  dot/x: %14.8e\n")
+              "  fakelag: %14.8e  dot: %10Ld  dot/x: %14.8e\n")
                 % curgrain_mi_bins % curlag_mi_grains 
-                % lag % dot % (double(dot)/double(norm_denom));
+                % fakelag % dot % (double(dot)/double(norm_denom));
     }
 
 // prepare for the next iteration:

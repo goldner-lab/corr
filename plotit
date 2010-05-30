@@ -29,7 +29,7 @@ set key off
 set pointsize 1
 ## plot  "IFN" using 2:4:5 w errorline ps 0 lt blue, 
 
-plot [-7:0] [0.9:3.5] "IFN" using 2:4:5 w errorline ps 0 lt blue, \\
+plot [-7:0] [YMIN:3.5] "IFN" using 2:4:5 w errorline ps 0 lt blue, \\
       "IFN" using 2:4 w line lt red lw 2
 
 set output
@@ -41,12 +41,17 @@ EoF
     die "Usage: plotit <infile.csv> <outfile.svg>\n";
   }
   $plotme =~ s/IFN/$ifn/g;
+  my $ymin = $ENV{'ymin'};
+  if (!defined($ymin)) {
+    $ymin = 0.9;
+  }
 
   my $ofn = $ARGV[1]; $ARGV[1]='';
   if (defined $ofn) {
     $plotme =~ s'#x-x#''g;
     $plotme =~ s/OFN/$ofn/;
     $plotme =~ s'lt green'lt 7'g;
+    $plotme =~ s/YMIN/$ymin/g;
 ##    $plotme =~ s'lt red'lt 7'g;
 ##    $plotme =~ s'lt blue'lt 7'g;
   }
