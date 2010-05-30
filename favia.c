@@ -33,7 +33,7 @@ void usage(ostream& foo) {
 "  --verbose            increase verbosity of debugging messages\n" 
 "  --xfile=sss          first input file [data007.dat]\n"
 "  --yfile=sss          second input file [clone of xfile]\n"
-"  --jiffy=ddd          unit of time (in s) for input timestamps [4e-12]\n"
+"  --jiffy=ddd          bin size (in s) for input timestamps [4e-12]\n"
 "  --max_events=iii     pretend input file has at most this many events\n"
 "                       [0 means use all of the input data]\n"
 "  --fineness=iii       inverse grain size (in grains per octave) [8]\n"
@@ -96,15 +96,15 @@ vector<daton> readfile_bin(const string fn,
   ifstream inch;
   inch.open(fn.c_str(), ios::in | ios::binary);
   if (!inch.good()) {
-    cerr << "Cannot open data file '" << fn << "': ";
+    cerr << "Favia cannot open binary data file '" << fn << "': ";
     perror(0);
     exit(1);
   }
-  cdp_t temp;
   vector<daton> raw__data(tot__events);
 
 // read raw data into memory:
   {                     
+    cdp_t temp;
     pdx_t ii;
     for (ii=0; ii < tot__events; ii++) {
     if (!inch.good()) break;
@@ -133,12 +133,10 @@ vector<daton> readfile_asc(const string fn,
   ifstream inch;
   inch.open(fn.c_str(), ios::in);
   if (!inch.good()) {
-    cerr << "Cannot open data file '" << fn << "': ";
+    cerr << "Favia cannot open ascii data file '" << fn << "': ";
     perror(0);
     exit(1);
   }
-  cdp_t temp;
-  string buf;
   vector<daton> raw__data;
 
 // atoll returns a long long int;  make sure that is
@@ -147,12 +145,19 @@ vector<daton> readfile_asc(const string fn,
 
 // read raw data into memory:
   {                     
+    cdp_t temp;
+    string buf;
     pdx_t ii;
     for (ii=0; ; ii++) {
     if (!inch.good()) break;
       getline(inch, buf);
       if (inch.eof()) break;
-      temp = atoll(buf.c_str());
+      temp = atoll(buf.c_str());        // see assertion above
+// Alas push_back is slow, but we are obliged to use it
+// (rather than indexing to element [ii]) because we 
+// cannot determine the size of the array in advance.
+// Besides, if you were interested in efficiency, you
+// wouldn't be using ascii format anyway.
       raw__data.push_back(daton(temp, 1));
     }
     inch.close();
@@ -170,7 +175,7 @@ vector<daton> readfile(const string fn, const int max__events) {
   ifstream inch;
   inch.open(fn.c_str(), ios::in | ios::binary);
   if (!inch.good()) {
-    cerr << "Favia auto-detect cannot open data file '" << fn << "': ";
+    cerr << "Favia cannot open data file '" << fn << "': ";
     perror(0);
     exit(1);
   }
@@ -320,26 +325,97 @@ int main(int argc, char** argv) {
 //??     << "  ratio-1: " << double(longgrain_mi_bins*jiffy)/long_lag - 1.
 
 
-  vector<daton> x_raw_data = readfile(xfn, max_events);
-  pdx_t x_tot_events = x_raw_data.size();
-// Allocate array for coarse-grained data, leaving plenty of room:
-  vector<daton> x_cg_data(x_tot_events);
-  cdp_t x_first_event = x_raw_data[0].abscissa;
-  cdp_t x_last_event = x_raw_data[x_tot_events-1].abscissa;
+class thingy{
+public:
+  vector<daton> raw_data;  
+  pdx_t tot_events;
+  vector<daton> cg_data;
+  cdp_t front_event;
+  cdp_t back_event;
+  cdp_t aspan_mi_bins;
 
-  vector<daton> y_raw_data = readfile(yfn, max_events);
-  pdx_t y_tot_events = y_raw_data.size();
-  vector<daton> y_cg_data(y_tot_events);
-  cdp_t y_first_event = y_raw_data[0].abscissa;
-  cdp_t y_last_event = y_raw_data[y_tot_events-1].abscissa;
+// constructor:
+  thingy(const string fn, const int max__events,
+        const double jiffy){
+    raw_data = readfile(fn, max__events);
+    tot_events = raw_data.size();
 
-// span of actual data:  not used
-// cdp_t dspan_mi_bins = 1 + x_last_event - x_first_event;
+// Allocate space for coarse-grained data;
+// For safety, overestimate the amount of space needed:
+// the size of coarse-grained array can never exceed the
+// size of the raw-data array.
+    cg_data.resize(tot_events);
+    front_event = raw_data[0].abscissa;
+    back_event = raw_data[tot_events-1].abscissa;
+/*****************************
+
+Later, we will do a normalization calculation.  We will need to feed
+it an unbiased estimate of the Poisson rate.  If we had a definite
+number of points in a definite interval, this would be easy ... but we
+don't have a definite interval.  All we have is the timestamp of the
+last event.
+
+Rather than talking about the rate, let's talk about inverse rate,
+i.e. the time between pulses.  If we have N events, there are N+1
+consecutive time intervals of interest:
+ -- the leadin, i.e. the time before the front event;
+ -- N-1 inter-event intervals; and
+ -- the leadout.
+
+Alas we do not know the leadout.  So we need a method that
+(implicitly or explicitly) estimates the leadout, and then
+estimates the rate.  So we are using the data to estimate
+two things.  Our estimate of the rate will of course depend
+on our estimate of the leadout.
+
+As a first attempt, let's just use the N-1 inter-event intervals, then
+the average interval is (t_back - t_front) / (N-1).  That is a
+disaster when N=1, but we can improve it as follows.
+
+As a second (and final) attempt, we make use of the leadin interval.
+This is useful information, but it is not an unbiased estimate of the
+inter-event interval, since the logger presumably turned on in the
+middle of an interval, and this samples intervals in a biased way,
+favoring longer intervals.  So let's count it as half of an
+interval.  So our estimate of the average interval is then
+(t_back - 0) / (N-1/2).  
+
+Note that when N=1, this implicitly estimates the leadout as being
+equal to the leadin.  More generally, this estimates the leadout as
+t_back / (2N-1).  For large N this converges to half of the average
+inter-event interval.  All this seems entirely reasonable.
+
+***************************/
+
+// span of actual data, 
+// i.e. the sum of the N-1 inter-event intervals
+// ... not used ...
+//  cdp_t dspan_mi_bins = 1 + back_event - front_event;
 
 // augmented span:
-// includes the lead-in (time before the first event)
-// but does not include any lead-out (time after last event).
-  cdp_t aspan_mi_bins = 1 + x_last_event - 0;
+// includes the lead-in (before the first bin)
+// and includes all the way to the /end/ of the last bin
+// but does not include any lead-out (after last bin)
+    aspan_mi_bins = 1 + back_event - 0;
+    cerr  << "  front_event: " << front_event
+      << "  back_event: "  << back_event 
+      << "  aspan_mi_bins: "  << aspan_mi_bins
+      << endl;
+    cerr   << "  start-time of front_event bin: " << front_event*jiffy
+           << "  start-time of back_event bin: "  << back_event*jiffy 
+           << "  aug span time: "    << aspan_mi_bins*jiffy
+           << endl;
+    {     // spacing is just FYI;  not used elsewhere
+     double spacing = aspan_mi_bins / tot_events;
+     cerr << boost::format("approx avg spacing: "
+        "%10.0f == %6.2e bins per event\n") 
+           % spacing % spacing;
+    }
+  }
+};      /* end class thingy */
+
+  thingy x(xfn, max_events, jiffy);
+  thingy y(xfn, max_events, jiffy);
 
 // there are three requirements on the zone size:
 // *) Zonesize must be a multiple of the largest grain size.
@@ -350,68 +426,63 @@ int main(int argc, char** argv) {
 // The treatment of X and Y is not symmetric, because 
 // only X gets lagged.
 
-  double aspan_mi_longs = aspan_mi_bins / longgrain_mi_bins;
+  double aspan_mi_longs = x.aspan_mi_bins / longgrain_mi_bins;
   const int reserved(1);
   double zone_mi_longs = floor(aspan_mi_longs) - reserved;
   double zone_mi_bins = zone_mi_longs * longgrain_mi_bins;
+
   cerr << "aspan_mi_longs: " << aspan_mi_longs
        << "  zone_mi_longs: " << zone_mi_longs
        << "  zone_mi_bins: " << zone_mi_bins
        << endl;
 
-  cerr  << "  x_first_event: " << x_first_event
-    << "  x_last_event: "  << x_last_event 
-    << "  aspan_mi_bins: "  << aspan_mi_bins
-    << endl;
-
-  cerr   << "  start-time of x_first_event bin: " << x_first_event*jiffy
-         << "  start-time of x_last_event bin: "  << x_last_event*jiffy 
-         << "  aug span time: "    << aspan_mi_bins*jiffy
-         << endl;
-
-  {     // spacing is just FYI;  not used elsewhere
-   double spacing = aspan_mi_bins / x_tot_events;
-   cerr << boost::format("approx avg spacing: "
-      "%10.0f == %6.2e bins per event\n") 
-         % spacing % spacing;
-  }
-
 // There are fineness cells in an ordinary octave, but
 // the startup requirement requires twice that many.
-// Also, the typical octave uses shifts in the range
-// [fineness, 2*fineness-1] ... so we will have many
-// uses for fin2:
+// Also, the typical octave uses curlag_mi_grains values in 
+// the range [fineness, 2*fineness-1] ... so we will 
+// have many uses for fin2:
   pdx_t fin2(2*fineness);
 
-// 'shift' is a number in the range [0, fin2]
+// curlag_mi_grains is the #1 crucial loop variable in all that follows.
+// It is manipulated by the outer loop *and* by the inner loop.
+// It is an integer, representing a number of grains.
+// It is a number in the range [0, fin2]
 // ... usually in the range [fineness, fin2-1]
-// A shift is essentially a coarse-grained version
-// of a lag.
-// Note that shift * grainsize * jiffy == 
-//  start time (in seconds) of the grain at this shift
-  cdp_t shift(1);
-  if (spikeme) shift=0;         // output will include zero spike
+// Note that curlag_mi_grains * grain_mi_bins * jiffy == 
+//  start time (in seconds) of the grain we are working on.
+  cdp_t curlag_mi_grains(1);
+  if (spikeme) curlag_mi_grains=0;         // output will include zero spike
 
   dot_t zerospike(0);
   dot_t hits(0);
-  cdp_t grainsize = cdp_t(short_lag / jiffy + .5);
+
+// curgrain_mi_bins is the #2 crucial loop variable.
+// It changes in the outer loop, 
+// but is constant with respect to the inner loop.
+
+// Meanwhile, shortgrain_mi_bins never changes;  
+// it is the size of the shortest grain.
+// Also, the bin size never changes; 
+// a bin is always one jiffy long.
+  cdp_t curgrain_mi_bins = shortgrain_mi_bins;
 
 // main loop over all resolutions
   for (pdx_t kk=0; ; kk++) {
-    if (kk) {
-      shift /= 2;
-      grainsize *= 2;
-    }
 
-    double coarse_bins = double(aspan_mi_bins) / double(grainsize);
-    double norm_denom = double(x_tot_events)*double(x_tot_events)
-                / coarse_bins;
+// here with the following loop variables already set up
+//   curlag_mi_grains = ...
+//   curgrain_mi_bins = ...
 
-    double dt(jiffy * grainsize);
-    double lag = shift * dt;
-    cerr << "top of loop:  shift: " << shift
-      << "  grainsize: " << grainsize
-      << "  iniial lag: " << lag
+    double bogus_zone_mi_grains = double(x.aspan_mi_bins) / curgrain_mi_bins;
+
+    double norm_denom = double(x.tot_events)*double(y.tot_events)
+                / bogus_zone_mi_grains;
+
+    double curgrain_mi_sec(jiffy * curgrain_mi_bins);
+    double lag = curlag_mi_grains * curgrain_mi_sec;
+    cerr << "top of loop:  lag_mi_grains: " << curlag_mi_grains
+      << "  curgrain_mi_bins: " << curgrain_mi_bins
+      << "  iniial lag: " << lag << " sec"
       << "  denom: " << norm_denom
       << endl;
 
@@ -419,35 +490,34 @@ int main(int argc, char** argv) {
 
 // remap so data starts at zero, with coarse graining:
 
-    pdx_t x_small = tighten(x_first_event, grainsize, 
-                &x_raw_data[0], x_raw_data.size(), 
-                &x_cg_data[0]);
-    pakvec pv1(0, 1+x_last_event/grainsize, &x_cg_data[0], x_small);
+    pdx_t x_small = tighten(x.front_event, curgrain_mi_bins, 
+                &x.raw_data[0], x.raw_data.size(), 
+                &x.cg_data[0]);
+    pakvec pv1(0, 1+x.back_event/curgrain_mi_bins, &x.cg_data[0], x_small);
 
-    pdx_t y_small = tighten(y_first_event, grainsize, 
-                &y_raw_data[0], y_raw_data.size(), 
-                &y_cg_data[0]);
-    pakvec pv2(0, 1+y_last_event/grainsize, &y_cg_data[0], y_small);
+    pdx_t y_small = tighten(y.front_event, curgrain_mi_bins, 
+                &y.raw_data[0], y.raw_data.size(), 
+                &y.cg_data[0]);
+    pakvec pv2(0, 1+y.back_event/curgrain_mi_bins, &y.cg_data[0], y_small);
 
-// inner loop over all shifts at this resolution:
-    for ( ; shift < fin2 ; shift++) {
-      lag = shift * dt;
+// inner loop over all lags, stepping grain by grain:
+    for ( ; curlag_mi_grains < fin2 ; curlag_mi_grains++) {
+      lag = curlag_mi_grains * curgrain_mi_sec;
       if (lag > long_lag) goto main_done;
 
-      if (0) cerr << "grainsize: " << grainsize
-        << "  shift: " << shift
-        << "  lag: " << shift*dt << endl;
-      pv1.set_bin0time(shift);
+      if (0) cerr << "curgrain_mi_bins: " << curgrain_mi_bins
+        << "  curlag_mi_grains: " << curlag_mi_grains
+        << "  lag: " << curlag_mi_grains*curgrain_mi_sec << endl;
+      pv1.set_bin0time(curlag_mi_grains);
       dot_t dot = pakdot(pv1, pv2);
-      if (shift == 0) zerospike = dot;
+      if (curlag_mi_grains == 0) zerospike = dot;
       hits += dot;
       double loglag(-9999);
       if (lag) loglag = log10(lag);
       
       double dotnormed = double(dot) / norm_denom;
-      double bar(0);
-      if (dot) bar = dotnormed / sqrt(dot);
-      double model = 1 - double(shift) / coarse_bins;
+      double bar(dot ? dotnormed / sqrt(dot) : 0);
+      double model = 1 - double(curlag_mi_grains) / bogus_zone_mi_grains;
       double residual = dotnormed - model;
 // If you change this output statement, be sure to
 // change the usage() message to match:
@@ -455,10 +525,15 @@ int main(int argc, char** argv) {
         ("%14.8e, %14.8e, %10Ld, %14.8e, %14.8e, %14.8e,\n")
         % lag % loglag % dot % dotnormed % bar % residual;
       if (dot) if (verbose)  cerr << boost::format
-        ("grainsize:%12Ld shift: %12Ld  lag: %14.8e  dot: %10Ld"
-                "  dot/x: %14.8e\n")
-        % grainsize % shift % lag % dot % (double(dot)/double(norm_denom));
+           ("curgrain_mi_bins:%12Ld curlag_mi_grains: %12Ld"
+              "  lag: %14.8e  dot: %10Ld  dot/x: %14.8e\n")
+                % curgrain_mi_bins % curlag_mi_grains 
+                % lag % dot % (double(dot)/double(norm_denom));
     }
+
+// prepare for the next iteration:
+    curlag_mi_grains /= 2;
+    curgrain_mi_bins *= 2;
   }
 
 main_done:;;;
