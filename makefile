@@ -1,7 +1,7 @@
 CC = /usr/bin/g++ -Wall -g
 
 
-all: favia monaco
+all: favia monaco fudge
 
 f = favia.o pakdot.o Getopt.o
 favia : $(f)
@@ -15,3 +15,7 @@ monaco : $(m)
 	$(CC) $(m) -o $@
 
 monaco.o : pakdot.h
+
+fu = fudge.o
+fudge: $(fu)
+	$(CC) $(fu) -o $@
