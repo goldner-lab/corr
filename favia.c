@@ -38,8 +38,8 @@ void usage(ostream& foo) {
 "                       [0 means use all of the input data]\n"
 "  --fineness=iii       inverse grain size (in grains per octave) [8]\n"
 "  --long_lag=ddd       longest lag (in seconds) to be considered [10]\n"
-"  --short_lag=ddd      smallest lag (in seconds) to be considered [1e-8]\n"
-"  --zerospike          include point at lag=0 in the output\n"
+"  --short_grain=ddd    smallest grain (in seconds) to be used [1e-8]\n"
+"  --zerospike          start output at lag=0 [otherwise at lag=1 grain]\n"
 "  --help               print this message\n"
 "\n"
 "Note: sss=some string;  ddd=some double;  iii=some int.\n"
@@ -205,8 +205,8 @@ int main(int argc, char** argv) {
   int fineness(8);
   pdx_t max_events(0);
 
-  double long_lag(10);
-  double short_lag(1e-8);
+  double long_lag_req(10);
+  double short_grain(1e-8);
   double jiffy(4e-12);
   int spikeme(0);
   ostream* ouch(&cout);
@@ -221,7 +221,7 @@ int main(int argc, char** argv) {
 // synonym, since lowercase "l" looks too much like digit "1":
     {"Long_lag",        1, NULL, 'L'},
     {"max_events",      1, NULL, 'm'},
-    {"short_lag",       1, NULL, 's'},
+    {"short_grain",     1, NULL, 's'},
     {"verbose",         0, NULL, 'v'},
     {"xfile",           1, NULL, 'x'},
     {"yfile",           1, NULL, 'y'},
@@ -247,13 +247,13 @@ int main(int argc, char** argv) {
         break;
       case 'l':
       case 'L':
-        long_lag = atof(optarg);
+        long_lag_req = atof(optarg);
         break;
       case 'm':
          max_events = atoi(optarg);
          break;
       case 's':
-        short_lag = atof(optarg);
+        short_grain = atof(optarg);
         break;
       case 'v':
         verbose++;
@@ -282,6 +282,15 @@ int main(int argc, char** argv) {
   }
   if (xfn.length()==0) xfn = "data007.dat";
   if (yfn.length()==0) yfn = xfn;
+
+// Using floats for loop control is bad practice;
+// round to integral # of bins at first opportunity.
+
+// In this program, _mi_ means "... measured in units of ..."
+
+  cdp_t shortgrain_mi_bins = floor(0.5 + short_grain / jiffy);
+
+  cerr << "verbose: " << verbose << endl;
   cerr << "xfn: " << xfn << endl;
   cerr << "yfn: " << yfn << endl;
   cerr << "jiffy: " << jiffy << " s" << endl;
@@ -289,18 +298,19 @@ int main(int argc, char** argv) {
        " == " << fineness*log2(10) << " grains per decade"
            << endl;
   cerr << "max_events: " << max_events << endl;
-  cerr << "short_lag: " << short_lag << " s" << endl;
-  cerr << "long_lag: "  << long_lag  << " s" << endl;
-  cerr << "verbose: " << verbose << endl;
-
-// In this program, _mi_ means "... measured in units of ..."
-
-// The "floor" here might make the smallest grain
-// slightly smaller than what was requested by -s.
-  cdp_t shortgrain_mi_bins = floor(short_lag / jiffy);
+  cerr << "short_grain: " << short_grain << " s" 
+     << " --> " << shortgrain_mi_bins << " bins"
+     << " == " << shortgrain_mi_bins*jiffy << " s"
+     << endl;
 
 // Be a little bit defensive:
-  if (shortgrain_mi_bins < 1) shortgrain_mi_bins = 1;
+  if (shortgrain_mi_bins < 1) {
+    cerr << "Cannot tolerate grain size less than bin size." << endl;
+    exit(1);
+  }
+
+// Now need to calculate the appropriate longest grain
+//  and longest lag.
 
 // Picture of the grains near the diagonal,
 // as multiples of the shortest grain,
@@ -310,18 +320,37 @@ int main(int argc, char** argv) {
 // 000000000 1 1 1 1   2   2   2   3  (bin
 // 012345678 0 2 4 6   0   4   8   2   number)
 // ----0000111111112222222222222222  (octave number)
+// 00000000111111112222222222222222  (octnox)
 
-// --001111222222223333333333333333 ????
+// Round to nearest bin, 
+// to avoid floating point representation problems:
+  cdp_t longlag_req_mi_bins = floor(0.5 + long_lag_req / jiffy);
 
-  cdp_t longlag_req_mi_shortg = ceil(long_lag / (shortgrain_mi_bins * jiffy));
+// This is the "requested" long lag, quantized in short grains.
+// (In contrast, the real long lag will be quantized in long grains,
+// but we can't do that until we figure out what the long grain is.)
+// Integer arithmetic rounds down:
+  cdp_t longlag_req_mi_shortg = longlag_req_mi_bins / shortgrain_mi_bins;
+
+// Octave number, valid in the geometric region:
   int octno(floor(log2(double(longlag_req_mi_shortg) / fineness)));
+// Treat the initial linear (non-geometric region) as
+// part of octave zero:
   int octnox(octno > 0 ? octno : 0);
   cdp_t longgrain_mi_bins = shortgrain_mi_bins * (1 << octnox);
-// round this up, so it covers the entire coarse-grained lag:
-  cdp_t longlag_mi_longg = ceil(long_lag / (longgrain_mi_bins * jiffy));
 
-  cerr << "shortgrain_mi_bins: " << shortgrain_mi_bins 
-        << "  longlag_req_mi_shortg: " << longlag_req_mi_shortg
+  cdp_t longlag_mi_longg = longlag_req_mi_bins / longgrain_mi_bins;
+  cdp_t longlag_mi_bins = longlag_mi_longg * longgrain_mi_bins;
+
+  cerr << "long_lag: "  << long_lag_req  << " s" 
+     << " --> " 
+     << longlag_mi_bins << " bins" 
+     << " == " << longlag_mi_bins / shortgrain_mi_bins << " shorts"
+     << " == " << longlag_mi_bins / longgrain_mi_bins << " longs"
+     << " == " << longlag_mi_bins * jiffy << " s"
+     << endl;
+
+  cerr  << "  longlag_req_mi_shortg: " << longlag_req_mi_shortg
         << "  log2: "  << log2(longlag_req_mi_shortg)
         << "  octno: "  << octno
         << "  octnox: "  << octnox
@@ -332,9 +361,15 @@ int main(int argc, char** argv) {
        << " == " << longgrain_mi_bins * jiffy << " s"
         << endl;
 
-//??     << "  ratio: " << double(longgrain_mi_bins*jiffy)/long_lag
-//??     << "  ratio-1: " << double(longgrain_mi_bins*jiffy)/long_lag - 1.
-
+// sanity check:
+  if (longlag_mi_bins * jiffy <= long_lag_req
+    && (longlag_mi_bins + longgrain_mi_bins) * jiffy > long_lag_req){
+      /* OK */
+  } else {
+    cerr << "inconsistency: longlag_mi_bins longgrain_mi_bins long_lag_req"
+      << endl;
+    exit(1);
+  }
 
 class channel{
 public:
@@ -462,7 +497,6 @@ the back bin.
 // The treatment of X and Y is not symmetric, because 
 // only X gets lagged.
 
-   cdp_t longlag_mi_bins(longlag_mi_longg * longgrain_mi_bins);
    cdp_t zone_mi_bins = x.qspan_mi_bins;
 // Here is where we actually implement extended boundary conditions:
 // Reserve one long_lag worth of room at the end:
@@ -511,6 +545,7 @@ the back bin.
 // Also, the bin size never changes; 
 // a bin is always one jiffy long.
   cdp_t curgrain_mi_bins = shortgrain_mi_bins;
+  cdp_t didlag_mi_bins;
 
 // main loop over all resolutions
   for (pdx_t kk=0; ; kk++) {
@@ -533,7 +568,7 @@ the back bin.
       << "  denom: " << norm_denom
       << endl;
 
-    if (lag > long_lag) break;
+    if (curlag_mi_grains * curgrain_mi_bins > longlag_mi_bins) break;
 
 // remap so data starts at zero, with coarse graining:
 
@@ -548,15 +583,20 @@ the back bin.
     pakvec pv2(0, zone_mi_bins/curgrain_mi_bins, &y.cg_data[0], y_small);
 
 // inner loop over all lags, stepping grain by grain:
-    for ( ; curlag_mi_grains < fin2 ; curlag_mi_grains++) {
-      lag = curlag_mi_grains * curgrain_mi_sec;
-      if (lag > long_lag) goto main_done;
+    for ( ;  ; curlag_mi_grains++) {
+// normally we break at the end of an octave ...
+      if (curlag_mi_grains >= fin2) break;
+// ... but we bail out in mid-octave if we reach the end of the zone:
+      if (curlag_mi_grains * curgrain_mi_bins > longlag_mi_bins)
+        goto main_done;
 
+      lag = curlag_mi_grains * curgrain_mi_sec;
       if (0) cerr << "curgrain_mi_bins: " << curgrain_mi_bins
         << "  curlag_mi_grains: " << curlag_mi_grains
         << "  lag: " << curlag_mi_grains*curgrain_mi_sec << endl;
       pv1.set_bin0time(curlag_mi_grains);
       dot_t dot = pakdot(pv1, pv2);
+      didlag_mi_bins = curlag_mi_grains * curgrain_mi_bins;
       if (curlag_mi_grains == 0) zerospike = dot;
       hits += dot;
       double fakelag(lag);
@@ -584,9 +624,28 @@ the back bin.
     curlag_mi_grains /= 2;
     curgrain_mi_bins *= 2;
   }
-
+  
 main_done:;;;
   
+  if (didlag_mi_bins != longlag_mi_bins) {
+    cerr << "oops: mismatch:\n" 
+     << "longlag: " << longlag_mi_bins << " bins" 
+     << " == " << longlag_mi_bins / shortgrain_mi_bins << " shorts"
+     << " == " << longlag_mi_bins / longgrain_mi_bins << " longs"
+     << " == " << longlag_mi_bins * jiffy << " s"
+     << "\n"
+
+     << " didlag: " <<  didlag_mi_bins << " bins" 
+     << " == " <<  didlag_mi_bins / shortgrain_mi_bins << " shorts"
+     << " == " <<  didlag_mi_bins / longgrain_mi_bins << " longs"
+     << " == " <<  didlag_mi_bins * jiffy << " s"
+        << endl;
+    exit(1);
+  } else {
+    if (0) cerr << "OK: didlag == longlag == " << longlag_mi_bins
+      << endl;
+  }
+
   if (zerospike) {
     dot_t other = hits - zerospike;
     cerr << boost::format("Zero spike: %d  other: 2*%d  total hits: %d\n")
