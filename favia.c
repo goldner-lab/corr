@@ -601,12 +601,12 @@ the back bin.
 
 // remap so data starts at zero, with coarse graining:
 
-    pdx_t x_small = tighten(x.front_event, curgrain_mi_bins, 
+    pdx_t x_small = tighten(0, curgrain_mi_bins, 
                 &x.raw_data[0], x.raw_data.size(), 
                 &x.cg_data[0]);
     pakvec pv1(0, zone_mi_bins/curgrain_mi_bins, &x.cg_data[0], x_small);
 
-    pdx_t y_small = tighten(y.front_event, curgrain_mi_bins, 
+    pdx_t y_small = tighten(0, curgrain_mi_bins, 
                 &y.raw_data[0], y.raw_data.size(), 
                 &y.cg_data[0]);
     pakvec pv2(0, zone_mi_bins/curgrain_mi_bins, &y.cg_data[0], y_small);
