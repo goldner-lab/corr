@@ -30,17 +30,20 @@ void usage(ostream& foo) {
 "\n"
 "Long-form options include the following.\n"
 "Defaults are shown in square brackets.\n"
-"  --verbose            increase verbosity of debugging messages\n" 
 "  --xfile=sss          first input file [data007.dat]\n"
 "  --yfile=sss          second input file [clone of xfile]\n"
 "  --jiffy=ddd          bin size (in s) for input timestamps [4e-12]\n"
-"  --max_events=iii     pretend input file has at most this many events\n"
+"  --max_events=iii     pretend each input file has at most this many events\n"
 "                       [0 means use all of the input data]\n"
+"                       (probably --tspan models the physics better)\n"
 "  --fineness=iii       inverse grain size (in grains per octave) [8]\n"
 "  --long_lag=ddd       longest lag (in seconds) to be considered [10]\n"
 "  --short_grain=ddd    smallest grain (in seconds) to be used [1e-8]\n"
+"  --tspan=ddd          exact span of both input files (in seconds)\n"
+"                       [0 means estimate span from last event + leadout]\n"
 "  --zerospike          start output at lag=0 [otherwise at lag=1 grain]\n"
-"  --help               print this message\n"
+"  --help               print this message and exit immediately\n"
+"  --verbose            increase verbosity of debugging messages\n" 
 "\n"
 "Note: sss=some string;  ddd=some double;  iii=some int.\n"
 "Note: for each long-form option there exists the corresponding\n"
@@ -64,6 +67,13 @@ void usage(ostream& foo) {
 "  dotnormed is the normalized dot product\n"
 "  bar       is an error bar, i.e. a measure of the uncertainty\n"
 "  residual  is measured relative to an estimate of the large-lag asymptote\n"
+"\n"
+"Useful simple checks:\n"
+"  ./favia -z -j 1 -s 1 -L 12 -t 112 -x count10.dat -y count1.dat\n"
+"  ./favia -z -j 1 -s 1 -L 12 -t 112 -y count10.dat -x count1.dat\n"
+"  ./favia -z -j 1 -s 1 -L 140 -t 300 -x count100.dat -y count1.dat\n"
+"  # where -L 140 is the same as -L 128\n"
+"  # and   -t 300 is the same as -t 288\n"
 << endl;
 
 // Not implemented:
@@ -162,7 +172,7 @@ vector<daton> readfile_asc(const string fn,
     }
     inch.close();
   }
-  cout << "Input file: " << raw__data.size() 
+  cerr << "Ascii input file: " << raw__data.size() 
        << " lines" << endl;
   return raw__data;
 }
@@ -205,9 +215,10 @@ int main(int argc, char** argv) {
   int fineness(8);
   pdx_t max_events(0);
 
-  double long_lag_req(10);
+  double long_lag_req(10.0);
   double short_grain(1e-8);
   double jiffy(4e-12);
+  double tspan(0.0);
   int spikeme(0);
   ostream* ouch(&cout);
 
@@ -222,6 +233,7 @@ int main(int argc, char** argv) {
     {"Long_lag",        1, NULL, 'L'},
     {"max_events",      1, NULL, 'm'},
     {"short_grain",     1, NULL, 's'},
+    {"tspan",           1, NULL, 't'},
     {"verbose",         0, NULL, 'v'},
     {"xfile",           1, NULL, 'x'},
     {"yfile",           1, NULL, 'y'},
@@ -254,6 +266,9 @@ int main(int argc, char** argv) {
          break;
       case 's':
         short_grain = atof(optarg);
+        break;
+      case 't':
+        tspan = atof(optarg);
         break;
       case 'v':
         verbose++;
@@ -305,7 +320,7 @@ int main(int argc, char** argv) {
 
 // Be a little bit defensive:
   if (shortgrain_mi_bins < 1) {
-    cerr << "Cannot tolerate grain size less than bin size." << endl;
+    cerr << "Ooops: grain size less than bin size." << endl;
     exit(1);
   }
 
@@ -366,8 +381,9 @@ int main(int argc, char** argv) {
     && (longlag_mi_bins + longgrain_mi_bins) * jiffy > long_lag_req){
       /* OK */
   } else {
-    cerr << "inconsistency: longlag_mi_bins longgrain_mi_bins long_lag_req"
-      << endl;
+    cerr << "Ooops: inconsistency involving"
+            " longlag_mi_bins, longgrain_mi_bins, and long_lag_req"
+         << endl;
     exit(1);
   }
 
@@ -386,7 +402,8 @@ public:
 // constructor:
   channel(const string fn, const int max__events,
         const double jiffy,
-        const cdp_t long_grain_mi_bins){
+        const cdp_t long_grain_mi_bins,
+        const double tspan){
     raw_data = readfile(fn, max__events);
     tot_events = raw_data.size();
 
@@ -418,11 +435,16 @@ public:
 
 /*****************************
 
+Estimating the leadout......
+
+Note: If tspan has been specified, you can skip this entire
+discussion.
+
 Later, we will do a normalization calculation.  We will need to feed
 it an unbiased estimate of the Poisson rate for this channel.  If we
 had a definite number of points in a definite interval, this would be
-easy ... but we don't have a definite interval.  All we have is the
-timestamp of the last event.
+easy ... but unless tspan has been specified, we don't have a definite
+interval.  All we have is the timestamp of the last event.
 
 Rather than talking about the rate, let's talk about inverse rate,
 i.e. the time between pulses.  If we have N events, there are N+1
@@ -460,21 +482,24 @@ the back bin.
 
 ***************************/
 
+    if (tspan) {
+      bspan_mi_bins = floor(0.5 + tspan / jiffy);
+    } else {
 // integer arithmetic here; remainder (if any) gets thrown away:
-    cdp_t leadout = back_event / (2*tot_events - 1);
-    bspan_mi_bins = (back_event - 0) + leadout + 1;
-    qspan_mi_bins = long_grain_mi_bins * (bspan_mi_bins / long_grain_mi_bins);
+      cdp_t leadout = back_event / (2*tot_events - 1);
+      bspan_mi_bins = (back_event - 0) + leadout + 1;
+      cerr << boost::format(
+         "  leadout:     %16LLf == %13.6g bins == %13.6g s")
+          % leadout % double(leadout)
+          % (leadout*jiffy)
+           << endl;
+    }
 
+    qspan_mi_bins = long_grain_mi_bins * (bspan_mi_bins / long_grain_mi_bins);
     cerr << boost::format(
        "  qspan:       %16LLf == %13.6g bins == %13.6g s")
         % qspan_mi_bins % double(qspan_mi_bins)
         % (qspan_mi_bins*jiffy)
-         << endl;
-
-    cerr << boost::format(
-       "  leadout:     %16LLf == %13.6g bins == %13.6g s")
-        % leadout % double(leadout)
-        % (leadout*jiffy)
          << endl;
 
     spacing_mi_bins = bspan_mi_bins / tot_events;
@@ -482,11 +507,11 @@ the back bin.
        "  avg spacing: %16.0f == %13.6g bins == %13.6g s")
           % spacing_mi_bins % double(spacing_mi_bins) % (spacing_mi_bins*jiffy)
         << endl;
-  }
+  }     /* end constructor */
 };      /* end class channel */
 
-  channel x(xfn, max_events, jiffy, longgrain_mi_bins);
-  channel y(yfn, max_events, jiffy, longgrain_mi_bins);
+  channel x(xfn, max_events, jiffy, longgrain_mi_bins, tspan);
+  channel y(yfn, max_events, jiffy, longgrain_mi_bins, tspan);
 
 // there are three requirements on the zone size:
 // *) Zonesize must be a multiple of the largest grain size.
@@ -514,6 +539,10 @@ the back bin.
      << " == " << longlag_mi_bins * jiffy << " s"
      << endl;
 
+   if (zone_mi_bins <= 0) {
+     cerr << "Oops, no data in zone.\n" << endl;
+     exit(1);
+   }
 // The fineness is the number of grains in an ordinary octave, but
 // the startup transient is a linear progression, not a geometric
 // or pseudogeometric progression, so it is not an octave at all,
@@ -582,6 +611,7 @@ the back bin.
                 &y.cg_data[0]);
     pakvec pv2(0, zone_mi_bins/curgrain_mi_bins, &y.cg_data[0], y_small);
 
+    cerr.flush();
 // inner loop over all lags, stepping grain by grain:
     for ( ;  ; curlag_mi_grains++) {
 // normally we break at the end of an octave ...
@@ -611,11 +641,11 @@ the back bin.
 // If you change this output statement, be sure to
 // change the usage() message to match:
       *ouch << boost::format
-        ("%14.8e, %14.8e, %10Ld, %14.8e, %14.8e, %14.8e,\n")
+        ("%15.8e, %15.8e, %10Ld, %15.8e, %15.8e, %15.8e,\n")
         % fakelag % loglag % dot % dotnormed % bar % residual;
       if (dot) if (verbose)  cerr << boost::format
            ("curgrain_mi_bins:%12Ld curlag_mi_grains: %12Ld"
-              "  fakelag: %14.8e  dot: %10Ld  dot/x: %14.8e\n")
+              "  fakelag: %15.8e  dot: %10Ld  dot/x: %15.8e\n")
                 % curgrain_mi_bins % curlag_mi_grains 
                 % fakelag % dot % (double(dot)/double(norm_denom));
     }
@@ -628,7 +658,7 @@ the back bin.
 main_done:;;;
   
   if (didlag_mi_bins != longlag_mi_bins) {
-    cerr << "oops: mismatch:\n" 
+    cerr << "Ooops: wrong loop exit condition:\n" 
      << "longlag: " << longlag_mi_bins << " bins" 
      << " == " << longlag_mi_bins / shortgrain_mi_bins << " shorts"
      << " == " << longlag_mi_bins / longgrain_mi_bins << " longs"
