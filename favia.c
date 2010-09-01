@@ -59,8 +59,8 @@ void usage(ostream& foo) {
 "Note: we auto-detect the input file format.\n"
 "\n"
 "Output file column headers are:\n"
-"  lag, loglag, dot, dotnormed, bar, residual\n"
-"where:\n"
+"  lag\\tloglag\\tdot\\tdotnormed\\tbar\\tresidual\n"
+"where \\t represents a tab and,:\n"
 "  lag       is measured in seconds\n"
 "  loglag    is log10(lag)\n"
 "  dot       is the raw dot product, i.e. the correlation at this lag\n"
@@ -641,7 +641,7 @@ the back bin.
 // If you change this output statement, be sure to
 // change the usage() message to match:
       *ouch << boost::format
-        ("%15.8e, %15.8e, %10Ld, %15.8e, %15.8e, %15.8e,\n")
+        ("%15.8e\t%15.8e\t%10Ld\t%15.8e\t%15.8e\t%15.8e\n")
         % fakelag % loglag % dot % dotnormed % bar % residual;
       if (dot) if (verbose)  cerr << boost::format
            ("curgrain_mi_bins:%12Ld curlag_mi_grains: %12Ld"
