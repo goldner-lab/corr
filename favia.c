@@ -26,7 +26,7 @@ void usage(ostream& foo) {
 "  http://www.av8n.com/physics/correlation-norm.htm\n"
 "\n"
 "Typical usage:\n"
-"  ./favia [options] > myfile.csv\n"
+"  ./favia [options] > myfile.corr\n"
 "\n"
 "Long-form options include the following.\n"
 "Defaults are shown in square brackets.\n"
