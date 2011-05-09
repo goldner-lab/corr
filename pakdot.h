@@ -107,139 +107,144 @@ typedef int64_t dot_t;
 
 class daton{
 public:
-  cdp_t abscissa;
-  pdx_t ordinate;
-// trivial default constructor:
-  daton(){
-    abscissa = 0;
-    ordinate = 0;
-  }
-// basic constructor:
-  daton(const cdp_t abs, const pdx_t ord) {
-    abscissa = abs;
-    ordinate = ord;
-  }
+        cdp_t abscissa;
+        pdx_t ordinate;
+        // trivial default constructor:
+        daton(){
+                abscissa = 0;
+                ordinate = 0;
+        }
+        // basic constructor:
+        daton(const cdp_t abs, const pdx_t ord) {
+                abscissa = abs;
+                ordinate = ord;
+        }
 };
 
 class pakvec{
 public:
-  cdp_t cv0time;	// time (in jiffies) corresponding to
-			// bin 0 of the conceptual vector
-  cdp_t cvnp;		// number of bins in the cv
-  const daton* spdata;	// pointer to static packed data
-  pdx_t spnp;		// number of points in static packed data
-  const daton* updata;	// pointer to useful packed data
-  pdx_t	upnp;		// number of useful points 
-  const char* verbose;
+        cdp_t cv0time;  // time (in jiffies) corresponding to
+        // bin 0 of the conceptual vector
+        cdp_t cvnp;             // number of bins in the cv
+        const daton* spdata;    // pointer to static packed data
+        pdx_t spnp;             // number of points in static packed data
+        const daton* updata;    // pointer to useful packed data
+        pdx_t   upnp;           // number of useful points 
+        const char* verbose;
 
-inline cdp_t get_cv0time() const {
-  return cv0time;
-}
+        inline cdp_t get_cv0time() const
+        {
+                return cv0time;
+        }
 
-// directly using public member variable in innermost loop:
-// real    0m13.838s
-// user    0m13.545s
-// sys     0m0.124s
-//
-// using inline accessor method, no optimization:
-// real    0m18.296s
-// user    0m18.201s
-// sys     0m0.056s
-
-
-// Returns the number of items that can be skipped
-// when we are not using periodic boundary conditions.
-// Some points are skippable because packed data items that 
-// correspond to negative bin numbers don't matter.
-inline pdx_t skippable(){
-  for (pdx_t p1 = 0; p1 < upnp; p1++){
-    if (updata[p1].abscissa >= cv0time) return p1;
-  }
-  return upnp;		// didn't find anything in range
-}
+        // directly using public member variable in innermost loop:
+        // real    0m13.838s
+        // user    0m13.545s
+        // sys     0m0.124s
+        //
+        // using inline accessor method, no optimization:
+        // real    0m18.296s
+        // user    0m18.201s
+        // sys     0m0.056s
 
 
-inline void set_bin0time(const cdp_t new0time){
-// For efficiency, new0time should not be less than
-// the old cv0time.
-// To say the same thing the other way,
-// calling us with new0time less than cv0time
-// is grudgingly permitted but is inefficient, because
-// it forces us -- via skippable() -- to recalculate 
-// upnp and updata _ab initio_.
-// This recalculation is inefficient but necessary,
-// assuming you want to get the right answer.
-  if (new0time < cv0time) {	
-    upnp = spnp;        // inefficient: reset to safe value
-    updata = spdata;    // ditto
-    cerr << "inefficient retrograde set_bin0time" << endl;
-  }
-  cv0time = new0time;
-  pdx_t nnn = skippable();
-  updata += nnn;  upnp -= nnn;
-}
+        // Returns the number of items that can be skipped
+        // when we are not using periodic boundary conditions.
+        // Some points are skippable because packed data items that 
+        // correspond to negative bin numbers don't matter.
+        inline pdx_t skippable()
+        {
+                for (pdx_t p1 = 0; p1 < upnp; p1++){
+                        if (updata[p1].abscissa >= cv0time) return p1;
+                }
+                return upnp;            // didn't find anything in range
+        }
 
-// Returns zero if ndx is within the valid range of the data,
-// nonzero otherwise.  
-//   In more detail:
-//   Returns 2 if ran out of data without reaching end of window.
-//   Returns 1 if indicated data is outside the window.
-//   Returns 0 if within window.
-//
-// Note: when doing convolutions, you probably want to
-// arrange (or at least check) that neither vector ever
-// returns 2, or neither vector ever returns 1.
-// Otherwise, you are using a non-constant fraction of
-// the packed data to populate the conceptual vector.
-//
-// Specifically:  If you have 2 hours worth of raw data,
-// and your conceptual vector is 1 minute long, the maximum
-// lag in your autocorrelation should be 119 minutes, not 120.
-inline pdx_t outwin(const pdx_t ndx) const{
-  if (ndx >= upnp) {
-      if (verbose) 
-        cout << "\t" << verbose << " outwin returns 2" << endl;
-      return 2;
-  }
-  if (updata[ndx].abscissa - cv0time >= cvnp) {
-    if (verbose) 
-      cout << "\t" << verbose << " outwin returns 1: " 
-      	<< updata[ndx].abscissa << " " << cvnp << endl;
-    return 1;
-  }
-  return 0;
-}
 
-// Constructor.  Used to create a new pakvec.
-inline pakvec(const cdp_t cv0time_, const cdp_t cvnp_, 
-	const daton* spdata_, pdx_t size_
-){
-  cv0time = cv0time_;
-  cvnp = cvnp_;
-  spdata = spdata_;
-  updata = spdata_;
-  upnp = spnp = size_;
-  set_bin0time(cv0time);         // do skipping if needed.
-  verbose = 0;
-}
+        inline void set_bin0time(const cdp_t new0time)
+        {
+                // For efficiency, new0time should not be less than
+                // the old cv0time.
+                // To say the same thing the other way,
+                // calling us with new0time less than cv0time
+                // is grudgingly permitted but is inefficient, because
+                // it forces us -- via skippable() -- to recalculate 
+                // upnp and updata _ab initio_.
+                // This recalculation is inefficient but necessary,
+                // assuming you want to get the right answer.
+                if (new0time < cv0time) {       
+                        upnp = spnp;        // inefficient: reset to safe value
+                        updata = spdata;    // ditto
+                        cerr << "inefficient retrograde set_bin0time" << endl;
+                }
+                cv0time = new0time;
+                pdx_t nnn = skippable();
+                updata += nnn;  upnp -= nnn;
+        }
 
-inline pdx_t total(){
-  pdx_t it;
-  pdx_t rslt(0);
-  for (it = 0; it < spnp; it++) {
-    rslt += spdata[it].ordinate;
-  }
-  return rslt;
-}
+        // Returns zero if ndx is within the valid range of the data,
+        // nonzero otherwise.  
+        //   In more detail:
+        //   Returns 2 if ran out of data without reaching end of window.
+        //   Returns 1 if indicated data is outside the window.
+        //   Returns 0 if within window.
+        //
+        // Note: when doing convolutions, you probably want to
+        // arrange (or at least check) that neither vector ever
+        // returns 2, or neither vector ever returns 1.
+        // Otherwise, you are using a non-constant fraction of
+        // the packed data to populate the conceptual vector.
+        //
+        // Specifically:  If you have 2 hours worth of raw data,
+        // and your conceptual vector is 1 minute long, the maximum
+        // lag in your autocorrelation should be 119 minutes, not 120.
+        inline pdx_t outwin(const pdx_t ndx) const
+        {
+                if (ndx >= upnp) {
+                        if (verbose) 
+                                cout << "\t" << verbose << " outwin returns 2" << endl;
+                        return 2;
+                }
+                if (updata[ndx].abscissa - cv0time >= cvnp) {
+                        if (verbose) 
+                                cout << "\t" << verbose << " outwin returns 1: " 
+                                        << updata[ndx].abscissa << " " << cvnp << endl;
+                        return 1;
+                }
+                return 0;
+        }
 
-};	// end of class pakvec
+        // Constructor.  Used to create a new pakvec.
+        inline pakvec(const cdp_t cv0time_, const cdp_t cvnp_, 
+                        const daton* spdata_, pdx_t size_)
+        {
+                cv0time = cv0time_;
+                cvnp = cvnp_;
+                spdata = spdata_;
+                updata = spdata_;
+                upnp = spnp = size_;
+                set_bin0time(cv0time);         // do skipping if needed.
+                verbose = 0;
+        }
+
+        inline pdx_t total()
+        {
+                pdx_t it;
+                pdx_t rslt(0);
+                for (it = 0; it < spnp; it++) {
+                        rslt += spdata[it].ordinate;
+                }
+                return rslt;
+        }
+
+};      // end of class pakvec
 
 ////////////////////////////
 //
 // Interface definitions for routines provided by pakdot.c
 
 struct pakdot_result_t {
-  dot_t dot, sum_squares;
+        dot_t dot, sum_squares;
 };
 
 // Take the dot product of two packed vectors.
@@ -247,7 +252,6 @@ pakdot_result_t pakdot(const pakvec pv1, const pakvec pv2, cdp_t & gs1, cdp_t & 
 pakdot_result_t pakdot(const pakvec pv1, const pakvec pv2);
 pakdot_result_t pbc_pakdot(const pakvec pv1, const pakvec pv2);
 
-pdx_t tighten(
-  const cdp_t first, const cdp_t grain,
-  const daton* loose, const pdx_t size, daton* tight
-);
+pdx_t tighten(const cdp_t first, const cdp_t grain,
+              const daton* loose, const pdx_t size, daton* tight);
+
