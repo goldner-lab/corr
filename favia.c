@@ -65,8 +65,8 @@ void usage(ostream& foo) {
 "  loglag    is log10(lag)\n"
 "  dot       is the raw dot product, i.e. the correlation at this lag\n"
 "  dotnormed is the normalized dot product\n"
-"  bar       is an error bar, i.e. a measure of the uncertainty\n"
-"  residual  is measured relative to an estimate of the large-lag asymptote\n"
+"  bar is a measure of uncertainty as detailed by wohland"
+"  residual is measured relative to an estimate of the large-lag asymptote\n"
 "\n"
 "Useful simple checks:\n"
 "  ./favia -z -j 1 -s 1 -L 12 -t 112 -x count10.dat -y count1.dat\n"
@@ -625,29 +625,33 @@ the back bin.
         << "  curlag_mi_grains: " << curlag_mi_grains
         << "  lag: " << curlag_mi_grains*curgrain_mi_sec << endl;
       pv1.set_bin0time(curlag_mi_grains);
-      dot_t dot = pakdot(pv1, pv2);
+      pakdot_result_t dot = pakdot(pv1, pv2);
       didlag_mi_bins = curlag_mi_grains * curgrain_mi_bins;
-      if (curlag_mi_grains == 0) zerospike = dot;
-      hits += dot;
+      if (curlag_mi_grains == 0) zerospike = dot.dot;
+      hits += dot.dot;
       double fakelag(lag);
       if (fakelag == 0.0) fakelag = jiffy/10.;
       else if (fakelag < 0.0) fakelag = jiffy/100.;
       double loglag(log10(fakelag));
-      
-      double dotnormed = double(dot) / norm_denom;
-      double bar(dot ? dotnormed / sqrt(dot) : 0);
+
+      double dotnormed = double(dot.dot) / norm_denom;
+      double squaresumnormed = double(dot.sum_squares) / pow(norm_denom, 2);
+
+      double bar = pow((zone_mi_grains * squaresumnormed - pow(dotnormed, 2)) / zone_mi_grains , 0.5);
       double model = 1.0;
       double residual = dotnormed - model;
 // If you change this output statement, be sure to
 // change the usage() message to match:
       *ouch << boost::format
         ("%15.8e\t%15.8e\t%10Ld\t%15.8e\t%15.8e\t%15.8e\n")
-        % fakelag % loglag % dot % dotnormed % bar % residual;
-      if (dot) if (verbose)  cerr << boost::format
+        % fakelag % loglag % dot.dot % dotnormed % bar % zone_mi_grains;
+
+	//residual;
+      if (dot.dot) if (verbose)  cerr << boost::format
            ("curgrain_mi_bins:%12Ld curlag_mi_grains: %12Ld"
               "  fakelag: %15.8e  dot: %10Ld  dot/x: %15.8e\n")
                 % curgrain_mi_bins % curlag_mi_grains 
-                % fakelag % dot % (double(dot)/double(norm_denom));
+                % fakelag % dot.dot % (double(dot.dot)/double(norm_denom));
     }
 
 // prepare for the next iteration:
