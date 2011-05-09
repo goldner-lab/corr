@@ -238,10 +238,14 @@ inline pdx_t total(){
 //
 // Interface definitions for routines provided by pakdot.c
 
+struct pakdot_result_t {
+  dot_t dot, sum_squares;
+};
+
 // Take the dot product of two packed vectors.
-dot_t pakdot(const pakvec pv1, const pakvec pv2, cdp_t & gs1, cdp_t & gs2);
-dot_t pakdot(const pakvec pv1, const pakvec pv2);
-dot_t pbc_pakdot(const pakvec pv1, const pakvec pv2);
+pakdot_result_t pakdot(const pakvec pv1, const pakvec pv2, cdp_t & gs1, cdp_t & gs2);
+pakdot_result_t pakdot(const pakvec pv1, const pakvec pv2);
+pakdot_result_t pbc_pakdot(const pakvec pv1, const pakvec pv2);
 
 pdx_t tighten(
   const cdp_t first, const cdp_t grain,

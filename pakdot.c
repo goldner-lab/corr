@@ -5,17 +5,25 @@
 
 using namespace std;
 #include <iostream>
+#include <cmath>
 #include "pakdot.h"
+
 
 // Take the dot product of two packed vectors.
 //
 //   The type here is pdx_t, because the largest number
 //   of coincidences between pv1 and pv2 is the number
 //   of slots in a packed vector.
- 
-dot_t pakdot(const pakvec pv1, const pakvec pv2){
+//
+//   In addition to the dot product, we also compute the sum of the
+//   squares in order to correctly calculate the error
+//   as described in equation 18 of
+//   Wohland, Rigler, and Vogel, "The Standard Deviation in Flourescence Correlation Spectroscopy"
+//   Biophysical Journal Volume 80 June 2001
 
-  dot_t rslt = 0;
+pakdot_result_t pakdot(const pakvec pv1, const pakvec pv2){
+
+  pakdot_result_t rslt = {0,0};
   pdx_t p1 = 0;
   pdx_t p2 = 0;
   
@@ -35,8 +43,12 @@ dot_t pakdot(const pakvec pv1, const pakvec pv2){
 // Note that the following three if statements are intentionally 
 // not mutually exclusive.  If diff is 0, both p1 and p2 get
 // incremented.
-    if (diff == 0) rslt +=   pv1.updata[p1].ordinate 
-                           * pv2.updata[p2].ordinate;
+    if (diff == 0) {
+      dot_t r =   pv1.updata[p1].ordinate 
+	        * pv2.updata[p2].ordinate;
+      rslt.dot += r;
+      rslt.sum_squares += pow(r, 2);
+    }
     if (diff <= 0) p1++;
     if (diff >= 0) p2++;
 
@@ -47,9 +59,9 @@ dot_t pakdot(const pakvec pv1, const pakvec pv2){
 // Same as the above, but assuming periodic boundary conditions.
 // We use do not use updata or outwin().
 // Instead we use spdata and spnp.
-dot_t pbc_pakdot(const pakvec pv1, const pakvec pv2){
+pakdot_result_t pbc_pakdot(const pakvec pv1, const pakvec pv2){
 
-  dot_t rslt = 0;
+  pakdot_result_t rslt = {0,0};
   pdx_t p1 = 0;
   pdx_t p2 = 0;
   
@@ -66,13 +78,15 @@ dot_t pbc_pakdot(const pakvec pv1, const pakvec pv2){
 // Note that the following three if statements are intentionally 
 // not mutually exclusive.  If diff is 0, both p1 and p2 get
 // incremented.
-    if (diff == 0) rslt +=   pv1.spdata[p1].ordinate
-        		   * pv2.spdata[p2].ordinate;
+    if (diff == 0) {
+      dot_t r =   pv1.updata[p1].ordinate 
+	        * pv2.updata[p2].ordinate;
+      rslt.dot += r;
+      rslt.sum_squares += pow(r, 2);
+    }
     if (diff <= 0) p1++;
     if (diff >= 0) p2++;
   }
-
-
   return rslt;
 }
 
