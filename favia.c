@@ -31,7 +31,7 @@ void usage(ostream& foo)
                 "\n"
                 "Long-form options include the following.\n"
                 "Defaults are shown in square brackets.\n"
-                "  --xfile=sss          first input file [data007.dat]\n"
+                "  --xfile=sss          first input file\n"
                 "  --yfile=sss          second input file [clone of xfile]\n"
                 "  --jiffy=ddd          bin size (in s) for input timestamps [4e-12]\n"
                 "  --max_events=iii     pretend each input file has at most this many events\n"
@@ -425,7 +425,10 @@ int main(int argc, char** argv)
                 }
 
         }
-        if (xfn.length()==0) xfn = "data007.dat";
+        if (xfn.length()==0) {
+                fprintf(stderr, "Expected --xfile\n");
+                exit(1);
+        }
         if (yfn.length()==0) yfn = xfn;
 
         // Using floats for loop control is bad practice;
