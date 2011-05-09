@@ -19,135 +19,6 @@ using namespace std;
 
 #include <assert.h>
 
-class channel
-{
-public:
-        vector<daton> raw_data;
-        pdx_t tot_events;
-        vector<daton> cg_data;
-        cdp_t front_event;
-        cdp_t back_event;
-        cdp_t bspan_mi_bins;
-        cdp_t qspan_mi_bins;
-        double spacing_mi_bins;       // bins per event, average spacing
-        // roughly speaking, inverse of the average rate
-
-        // constructor:
-        channel(const string fn, const int max__events,
-                const double jiffy,
-                const cdp_t long_grain_mi_bins,
-                const double tspan)
-        {
-                raw_data = readfile(fn, max__events);
-                tot_events = raw_data.size();
-
-                // Allocate space for coarse-grained data;
-                // For safety, overestimate the amount of space needed:
-                // the size of coarse-grained array can never exceed the
-                // size of the raw-data array.
-                cg_data.resize(tot_events);
-                front_event = raw_data[0].abscissa;
-                back_event = raw_data[tot_events-1].abscissa;
-
-
-                // span of actual data, 
-                // i.e. the sum of the N-1 inter-event intervals
-                // ... not used ...
-                //  cdp_t dspan_mi_bins = 1 + back_event - front_event;
-
-                cerr << boost::format(
-                                "  front_event: %16LLf == %13.6g bins == %13.6g s")
-                        % front_event % double(front_event)
-                        % (front_event*jiffy)
-                     << endl;
-                cerr << boost::format(
-                                "  back_event:  %16LLf == %13.6g bins == %13.6g s")
-                        % back_event % double(back_event)
-                        % (back_event*jiffy)
-                     << endl;
-
-
-                /*****************************
-                 *
-                 * Estimating the leadout......
-                 *
-                 * Note: If tspan has been specified, you can skip this entire
-                 * discussion.
-                 *
-                 * Later, we will do a normalization calculation.  We will need
-                 * to feed it an unbiased estimate of the Poisson rate for this
-                 * channel.  If we had a definite number of points in a
-                 * definite interval, this would be easy ... but unless tspan
-                 * has been specified, we don't have a definite interval.  All
-                 * we have is the timestamp of the last event.
-                 *
-                 * Rather than talking about the rate, let's talk about inverse
-                 * rate, i.e. the time between pulses.  If we have N events,
-                 * there are N+1 consecutive time intervals of interest:
-                 *
-                 * -- the leadin, i.e. the time before the front event; -- N-1
-                 * inter-event intervals; and -- the leadout.
-                 *
-                 * Alas we do not know the leadout.  So we need a method that
-                 * (implicitly or explicitly) estimates the leadout, and then
-                 * estimates the rate.  So we are using the data to estimate
-                 * two things.  Our estimate of the rate will of course depend
-                 * on our estimate of the leadout.
-                 *
-                 * As a first attempt, let's just use the N-1 inter-event
-                 * intervals, then the average interval is (back_event -
-                 * front_event) / (N-1).  That is a disaster when N=1, but we
-                 * can improve it as follows.
-                 *
-                 * As a second (and almost final) attempt, we make use of the
-                 * leadin interval.  This is useful information, but it is not
-                 * an unbiased estimate of the inter-event interval, since the
-                 * logger presumably turned on in the middle of an interval,
-                 * and this samples intervals in a biased way, favoring longer
-                 * intervals.  So let's count it as half of an interval.  So
-                 * our estimate of the average interval is then (back_event -
-                 * 0) / (N-1/2).
-                 *
-                 * Note that when N=1, this implicitly estimates the leadout as
-                 * being equal to the leadin.  More generally, this estimates
-                 * the leadout as back_event / (2N-1).  For large N this
-                 * converges to half of the average inter-event interval.  All
-                 * this seems entirely reasonable.
-                 *
-                 * Finally, we add 1 to the span_mi_bins, because we want the
-                 * span-time to cover all the time from the start of the front
-                 * bin to the *end* of the back bin.
-                 *
-                 */ 
-
-                if (tspan) {
-                        bspan_mi_bins = floor(0.5 + tspan / jiffy);
-                } else {
-                        // integer arithmetic here; remainder (if any) gets thrown away:
-                        cdp_t leadout = back_event / (2*tot_events - 1);
-                        bspan_mi_bins = (back_event - 0) + leadout + 1;
-                        cerr << boost::format(
-                                        "  leadout:     %16LLf == %13.6g bins == %13.6g s")
-                                % leadout % double(leadout)
-                                % (leadout*jiffy)
-                                << endl;
-                }
-
-                qspan_mi_bins = long_grain_mi_bins * (bspan_mi_bins / long_grain_mi_bins);
-                cerr << boost::format(
-                                "  qspan:       %16LLf == %13.6g bins == %13.6g s")
-                        % qspan_mi_bins % double(qspan_mi_bins)
-                        % (qspan_mi_bins*jiffy)
-                        << endl;
-
-                spacing_mi_bins = bspan_mi_bins / tot_events;
-                cerr << boost::format(
-                                "  avg spacing: %16.0f == %13.6g bins == %13.6g s")
-                        % spacing_mi_bins % double(spacing_mi_bins) % (spacing_mi_bins*jiffy)
-                        << endl;
-        }     /* end constructor */
-};      /* end class channel */
-
 void usage(ostream& foo)
 {
         foo << 
@@ -336,6 +207,135 @@ vector<daton> readfile(const string fn, const int max__events)
                 return readfile_bin(fn, max__events);
         }
 }
+
+class channel
+{
+public:
+        vector<daton> raw_data;
+        pdx_t tot_events;
+        vector<daton> cg_data;
+        cdp_t front_event;
+        cdp_t back_event;
+        cdp_t bspan_mi_bins;
+        cdp_t qspan_mi_bins;
+        double spacing_mi_bins;       // bins per event, average spacing
+        // roughly speaking, inverse of the average rate
+
+        // constructor:
+        channel(const string fn, const int max__events,
+                const double jiffy,
+                const cdp_t long_grain_mi_bins,
+                const double tspan)
+        {
+                raw_data = readfile(fn, max__events);
+                tot_events = raw_data.size();
+
+                // Allocate space for coarse-grained data;
+                // For safety, overestimate the amount of space needed:
+                // the size of coarse-grained array can never exceed the
+                // size of the raw-data array.
+                cg_data.resize(tot_events);
+                front_event = raw_data[0].abscissa;
+                back_event = raw_data[tot_events-1].abscissa;
+
+
+                // span of actual data, 
+                // i.e. the sum of the N-1 inter-event intervals
+                // ... not used ...
+                //  cdp_t dspan_mi_bins = 1 + back_event - front_event;
+
+                cerr << boost::format(
+                                "  front_event: %16LLf == %13.6g bins == %13.6g s")
+                        % front_event % double(front_event)
+                        % (front_event*jiffy)
+                     << endl;
+                cerr << boost::format(
+                                "  back_event:  %16LLf == %13.6g bins == %13.6g s")
+                        % back_event % double(back_event)
+                        % (back_event*jiffy)
+                     << endl;
+
+
+                /*****************************
+                 *
+                 * Estimating the leadout......
+                 *
+                 * Note: If tspan has been specified, you can skip this entire
+                 * discussion.
+                 *
+                 * Later, we will do a normalization calculation.  We will need
+                 * to feed it an unbiased estimate of the Poisson rate for this
+                 * channel.  If we had a definite number of points in a
+                 * definite interval, this would be easy ... but unless tspan
+                 * has been specified, we don't have a definite interval.  All
+                 * we have is the timestamp of the last event.
+                 *
+                 * Rather than talking about the rate, let's talk about inverse
+                 * rate, i.e. the time between pulses.  If we have N events,
+                 * there are N+1 consecutive time intervals of interest:
+                 *
+                 * -- the leadin, i.e. the time before the front event; -- N-1
+                 * inter-event intervals; and -- the leadout.
+                 *
+                 * Alas we do not know the leadout.  So we need a method that
+                 * (implicitly or explicitly) estimates the leadout, and then
+                 * estimates the rate.  So we are using the data to estimate
+                 * two things.  Our estimate of the rate will of course depend
+                 * on our estimate of the leadout.
+                 *
+                 * As a first attempt, let's just use the N-1 inter-event
+                 * intervals, then the average interval is (back_event -
+                 * front_event) / (N-1).  That is a disaster when N=1, but we
+                 * can improve it as follows.
+                 *
+                 * As a second (and almost final) attempt, we make use of the
+                 * leadin interval.  This is useful information, but it is not
+                 * an unbiased estimate of the inter-event interval, since the
+                 * logger presumably turned on in the middle of an interval,
+                 * and this samples intervals in a biased way, favoring longer
+                 * intervals.  So let's count it as half of an interval.  So
+                 * our estimate of the average interval is then (back_event -
+                 * 0) / (N-1/2).
+                 *
+                 * Note that when N=1, this implicitly estimates the leadout as
+                 * being equal to the leadin.  More generally, this estimates
+                 * the leadout as back_event / (2N-1).  For large N this
+                 * converges to half of the average inter-event interval.  All
+                 * this seems entirely reasonable.
+                 *
+                 * Finally, we add 1 to the span_mi_bins, because we want the
+                 * span-time to cover all the time from the start of the front
+                 * bin to the *end* of the back bin.
+                 *
+                 */ 
+
+                if (tspan) {
+                        bspan_mi_bins = floor(0.5 + tspan / jiffy);
+                } else {
+                        // integer arithmetic here; remainder (if any) gets thrown away:
+                        cdp_t leadout = back_event / (2*tot_events - 1);
+                        bspan_mi_bins = (back_event - 0) + leadout + 1;
+                        cerr << boost::format(
+                                        "  leadout:     %16LLf == %13.6g bins == %13.6g s")
+                                % leadout % double(leadout)
+                                % (leadout*jiffy)
+                                << endl;
+                }
+
+                qspan_mi_bins = long_grain_mi_bins * (bspan_mi_bins / long_grain_mi_bins);
+                cerr << boost::format(
+                                "  qspan:       %16LLf == %13.6g bins == %13.6g s")
+                        % qspan_mi_bins % double(qspan_mi_bins)
+                        % (qspan_mi_bins*jiffy)
+                        << endl;
+
+                spacing_mi_bins = bspan_mi_bins / tot_events;
+                cerr << boost::format(
+                                "  avg spacing: %16.0f == %13.6g bins == %13.6g s")
+                        % spacing_mi_bins % double(spacing_mi_bins) % (spacing_mi_bins*jiffy)
+                        << endl;
+        }     /* end constructor */
+};      /* end class channel */
 
 int main(int argc, char** argv)
 {
