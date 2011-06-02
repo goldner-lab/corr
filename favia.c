@@ -612,13 +612,6 @@ int main(int argc, char** argv)
                                 &y.cg_data[0]);
                 pakvec pv2(0, zone_mi_bins/curgrain_mi_bins, &y.cg_data[0], y_small);
 
-                double a = 0, b = 0;
-                for (pdx_t i=0; i < pv1.upnp; i++) {
-                        a += pv1.updata[i].ordinate;
-                        b += pv2.updata[i].ordinate;
-                }
-                double norm_denom = zone_mi_grains * (a / zone_mi_grains) * (b / zone_mi_grains);
-
                 double old_norm_denom = zone_mi_grains
                         * (curgrain_mi_sec / (x.spacing_mi_bins*jiffy))
                         * (curgrain_mi_sec / (y.spacing_mi_bins*jiffy));
@@ -628,10 +621,10 @@ int main(int argc, char** argv)
                      << "  curgrain_mi_bins: " << curgrain_mi_bins
                      << "  iniial lag: " << lag << " sec"
                      << "  old_denom: " << old_norm_denom
-                     << "  denom: " << norm_denom
                      << endl;
                 cerr << "zone_mi_grains: " << zone_mi_grains
-                     << "  upnp: " << pv1.upnp << endl;
+                     << "  upnp1: " << pv1.upnp
+                     << "  upnp2: " << pv2.upnp << endl;
 
                 cerr.flush();
                 // inner loop over all lags, stepping grain by grain:
@@ -648,6 +641,13 @@ int main(int argc, char** argv)
                                     << "  lag: " << curlag_mi_grains*curgrain_mi_sec << endl;
                         pv1.set_bin0time(curlag_mi_grains);
                         pakdot_result_t dot = pakdot(pv1, pv2);
+                        double a = 0, b = 0;
+                        for (pdx_t i=0; i < pv1.upnp; i++)
+                                a += pv1.updata[i].ordinate;
+                        for (pdx_t i=0; i < pv2.upnp; i++)
+                                b += pv2.updata[i].ordinate;
+                        double norm_denom = zone_mi_grains * (a / zone_mi_grains) * (b / zone_mi_grains);
+                        cerr << "  denom: " << norm_denom << "\n";
                         didlag_mi_bins = curlag_mi_grains * curgrain_mi_bins;
                         if (curlag_mi_grains == 0) zerospike = dot.dot;
                         hits += dot.dot;
