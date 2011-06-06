@@ -60,14 +60,14 @@ void usage(ostream& foo)
                 "Note: we auto-detect the input file format.\n"
                 "\n"
                 "Output file column headers are:\n"
-                "  lag\\tloglag\\tdot\\tdotnormed\\tbar\\tresidual\n"
+                "  lag\\tloglag\\tdot\\tdotnormed\\tbar^2\\tresidual\n"
                 "where \\t represents a tab and,:\n"
                 "  lag       is measured in seconds\n"
                 "  loglag    is log10(lag)\n"
                 "  dot       is the raw dot product, i.e. the correlation at this lag\n"
                 "  dotnormed is the normalized dot product\n"
-                "  bar is a measure of uncertainty as detailed by wohland"
-                "  residual is measured relative to an estimate of the large-lag asymptote\n"
+                "  bar^2     is a measure of uncertainty as detailed by wohland"
+                "  residual  is measured relative to an estimate of the large-lag asymptote\n"
                 "\n"
                 "Useful simple checks:\n"
                 "  ./favia -z -j 1 -s 1 -L 12 -t 112 -x count10.dat -y count1.dat\n"
@@ -657,14 +657,14 @@ int main(int argc, char** argv)
                         double dotnormed = double(dot.dot) / norm_denom;
                         double squaresumnormed = double(dot.sum_squares) / pow(norm_denom, 2);
 
-                        double bar = pow((zone_mi_grains * squaresumnormed - pow(dotnormed, 2)) / zone_mi_grains , 0.5);
+                        double bar2 = (zone_mi_grains * squaresumnormed - pow(dotnormed, 2)) / zone_mi_grains;
                         double model = 1.0;
                         double residual = dotnormed - model;
                         // If you change this output statement, be sure to
                         // change the usage() message to match:
                         *ouch << boost::format
-                                ("%15.8e\t%15.8e\t%10Ld\t%15.8e\t%15.8e\t%15.8e\n")
-                                % fakelag % loglag % dot.dot % dotnormed % bar % zone_mi_grains;
+                                ("%15.8e\t%15.8e\t%10Ld\t%15.8e\t%15.8e\n")
+                                % fakelag % loglag % dot.dot % dotnormed % bar2;
 
                         //residual;
                         if (dot.dot) if (verbose)  cerr << boost::format
