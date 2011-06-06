@@ -615,7 +615,6 @@ int main(int argc, char** argv)
                 double old_norm_denom = zone_mi_grains
                         * (curgrain_mi_sec / (x.spacing_mi_bins*jiffy))
                         * (curgrain_mi_sec / (y.spacing_mi_bins*jiffy));
-                //norm_denom = old_norm_denom;
 
                 cerr << "top of loop:  lag_mi_grains: " << curlag_mi_grains
                      << "  curgrain_mi_bins: " << curgrain_mi_bins
@@ -642,12 +641,11 @@ int main(int argc, char** argv)
                         pv1.set_bin0time(curlag_mi_grains);
                         pakdot_result_t dot = pakdot(pv1, pv2);
                         double a = 0, b = 0;
-                        for (pdx_t i=0; i < pv1.upnp; i++)
+                        for (pdx_t i=0; pv1.outwin(i) == 0; i++)
                                 a += pv1.updata[i].ordinate;
-                        for (pdx_t i=0; i < pv2.upnp; i++)
+                        for (pdx_t i=0; pv2.outwin(i) == 0; i++)
                                 b += pv2.updata[i].ordinate;
                         double norm_denom = zone_mi_grains * (a / zone_mi_grains) * (b / zone_mi_grains);
-                        cerr << "  denom: " << norm_denom << "\n";
                         didlag_mi_bins = curlag_mi_grains * curgrain_mi_bins;
                         if (curlag_mi_grains == 0) zerospike = dot.dot;
                         hits += dot.dot;
