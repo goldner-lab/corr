@@ -612,14 +612,9 @@ int main(int argc, char** argv)
                                 &y.cg_data[0]);
                 pakvec pv2(0, zone_mi_bins/curgrain_mi_bins, &y.cg_data[0], y_small);
 
-                double old_norm_denom = zone_mi_grains
-                        * (curgrain_mi_sec / (x.spacing_mi_bins*jiffy))
-                        * (curgrain_mi_sec / (y.spacing_mi_bins*jiffy));
-
                 cerr << "top of loop:  lag_mi_grains: " << curlag_mi_grains
                      << "  curgrain_mi_bins: " << curgrain_mi_bins
                      << "  iniial lag: " << lag << " sec"
-                     << "  old_denom: " << old_norm_denom
                      << endl;
                 cerr << "zone_mi_grains: " << zone_mi_grains
                      << "  upnp1: " << pv1.upnp
