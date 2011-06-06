@@ -640,7 +640,7 @@ int main(int argc, char** argv)
                                 a += pv1.updata[i].ordinate;
                         for (pdx_t i=0; pv2.outwin(i) == 0; i++)
                                 b += pv2.updata[i].ordinate;
-                        double norm_denom = zone_mi_grains * (a / zone_mi_grains) * (b / zone_mi_grains);
+                        double norm_denom = (a / zone_mi_grains) * (b / zone_mi_grains);
                         didlag_mi_bins = curlag_mi_grains * curgrain_mi_bins;
                         if (curlag_mi_grains == 0) zerospike = dot.dot;
                         hits += dot.dot;
@@ -649,24 +649,19 @@ int main(int argc, char** argv)
                         else if (fakelag < 0.0) fakelag = jiffy/100.;
                         double loglag(log10(fakelag));
 
-                        double dotnormed = double(dot.dot) / norm_denom;
-                        double squaresumnormed = double(dot.sum_squares) / pow(norm_denom, 2);
-
-                        double bar2 = (zone_mi_grains * squaresumnormed - pow(dotnormed, 2)) / zone_mi_grains;
-                        double model = 1.0;
-                        double residual = dotnormed - model;
+                        double dotnormed = double(dot.dot) / norm_denom / zone_mi_grains;
+                        double bar2 = (dot.sum_squares / zone_mi_grains - pow(dot.dot / zone_mi_grains, 2)) / zone_mi_grains / pow(norm_denom, 2);
                         // If you change this output statement, be sure to
                         // change the usage() message to match:
                         *ouch << boost::format
                                 ("%15.8e\t%15.8e\t%10Ld\t%15.8e\t%15.8e\n")
                                 % fakelag % loglag % dot.dot % dotnormed % bar2;
 
-                        //residual;
                         if (dot.dot) if (verbose)  cerr << boost::format
                                 ("curgrain_mi_bins:%12Ld curlag_mi_grains: %12Ld"
                                  "  fakelag: %15.8e  dot: %10Ld  dot/x: %15.8e\n")
                                         % curgrain_mi_bins % curlag_mi_grains 
-                                        % fakelag % dot.dot % (double(dot.dot)/double(norm_denom));
+                                        % fakelag % dot.dot % (double(dot.dot)/norm_denom/zone_mi_grains);
                 }
 
                 // prepare for the next iteration:
