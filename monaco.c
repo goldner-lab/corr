@@ -198,7 +198,7 @@ int main(int argc, char** argv) {
         usage(cout);
         exit(0);
       case 'm':
-        maxdraw = atoll(optarg);
+        maxdraw = atof(optarg);
         break;
       case 'o':
         ofn = optarg;
