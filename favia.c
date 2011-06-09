@@ -352,6 +352,9 @@ int main(int argc, char** argv)
         int spikeme(0);
         ostream* ouch(&cout);
 
+        // Numerical paranoia
+        feenableexcept(fegetexcept() | FE_DIVBYZERO | FE_INVALID);
+
         // Process commandline options 
         const int ALT(128);
         static struct option long_options[] = {
