@@ -11,6 +11,7 @@ using namespace std;
 #include <stdlib.h>             /* atoi, getenv */
 #include <values.h>             /* INT_MAX */
 #include <math.h>               /* log10() */
+#include <fenv.h>
 
 #include <iostream>
 #include <fstream>
