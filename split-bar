@@ -1,0 +1,48 @@
+#!/usr/bin/python
+
+import sys
+from photon_tools.favia import corr #photon_tools.favia calls favia from python
+from photon_tools import timetag_parse #this extracts timestamps
+import os.path
+import numpy as np
+from matplotlib import pyplot as pl
+import math
+from matplotlib import mlab
+
+#datapath="/mnt/server/lab/data/dianwen/Experimental Data/01-05-2011"
+#datapath="/home/rich/data/10-29-2010"
+
+files = sys.argv[1:]
+verbose = False
+jiffy = 1./128e6
+subcount = 10
+
+#file='01-05-2011-500pMYFPMTL&5nMCy5RNA-10uW514nM.timetag'
+
+for file in files:
+    fname = os.path.basename(file)
+    print fname
+
+    donor0 = timetag_parse.get_strobe_events(file, 0x1)['t'] #0x1 is the channel mask
+    acceptor0 = timetag_parse.get_strobe_events(file, 0x2)['t'] #ditto for channel 2]
+
+    donor0 = donor0[1000:]
+    acceptor0 = acceptor0[1000:]
+    sublength = len(donor0) / subcount
+
+    dcorr = []
+    for a in range(0, subcount):
+        nextdonor = donor0[a*sublength:(a+1)*sublength+1]
+        nextcorr = corr(nextdonor, nextdonor, jiffy=jiffy, verbose=verbose)
+        dcorr.append(nextcorr)
+
+    all_runs = np.vstack(d['dotnormed'] for d in dcorr)
+    mean_G = np.mean(all_runs, axis=0)
+    std_G = np.std(all_runs, axis=0)
+
+    dcorrTot = corr(donor0, donor0, jiffy=jiffy, verbose=verbose)
+
+    out = mlab.rec_append_fields(dcorrTot, ('mean_G', 'std_G'), (mean_G, std_G))
+    f = open('./%s.corr' % fname, 'w')
+    f.write("# " + '\t'.join(n.ljust(12) for n in out.dtype.names) + '\n')
+    np.savetxt(f, out, fmt='%10.5e', delimiter='\t')
