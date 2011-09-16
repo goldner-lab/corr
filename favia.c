@@ -616,7 +616,7 @@ int main(int argc, char** argv)
                                 &y.cg_data[0]);
                 pakvec pv2(0, zone_mi_bins/curgrain_mi_bins, &y.cg_data[0], y_small);
 
-                cerr << "top of loop:  lag_mi_grains: " << curlag_mi_grains
+                cerr << "top of loop:  curlag_mi_grains: " << curlag_mi_grains
                      << "  curgrain_mi_bins: " << curgrain_mi_bins
                      << "  initial lag: " << lag << " sec"
                      << endl;
