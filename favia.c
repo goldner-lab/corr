@@ -618,7 +618,7 @@ int main(int argc, char** argv)
 
                 cerr << "top of loop:  lag_mi_grains: " << curlag_mi_grains
                      << "  curgrain_mi_bins: " << curgrain_mi_bins
-                     << "  iniial lag: " << lag << " sec"
+                     << "  initial lag: " << lag << " sec"
                      << endl;
                 cerr << "zone_mi_grains: " << zone_mi_grains
                      << "  upnp1: " << pv1.upnp
