@@ -616,13 +616,11 @@ int main(int argc, char** argv)
                                 &y.cg_data[0]);
                 pakvec pv2(0, zone_mi_bins/curgrain_mi_bins, &y.cg_data[0], y_small);
 
-                cerr << "top of loop:  curlag_mi_grains: " << curlag_mi_grains
-                     << "  curgrain_mi_bins: " << curgrain_mi_bins
-                     << "  initial lag: " << lag << " sec"
-                     << endl;
-                cerr << "zone_mi_grains: " << zone_mi_grains
-                     << "  upnp1: " << pv1.upnp
-                     << "  upnp2: " << pv2.upnp << endl;
+                if (verbose)
+                        cerr << "top of loop:  curlag_mi_grains: " << curlag_mi_grains
+                             << "  curgrain_mi_bins: " << curgrain_mi_bins
+                             << "  initial lag: " << lag << " sec"
+                             << "  zone_mi_grains: " << zone_mi_grains << endl;
 
                 cerr.flush();
                 // inner loop over all lags, stepping grain by grain:
@@ -634,9 +632,9 @@ int main(int argc, char** argv)
                                 goto main_done;
 
                         lag = curlag_mi_grains * curgrain_mi_sec;
-                        if (0) cerr << "curgrain_mi_bins: " << curgrain_mi_bins
-                                    << "  curlag_mi_grains: " << curlag_mi_grains
-                                    << "  lag: " << curlag_mi_grains*curgrain_mi_sec << endl;
+                        if (verbose)
+                                cerr << "  curlag_mi_grains: " << curlag_mi_grains
+                                     << "  lag: " << curlag_mi_grains*curgrain_mi_sec << endl;
                         pv1.set_bin0time(curlag_mi_grains);
                         pakdot_result_t dot = pakdot(pv1, pv2);
                         double a = 0, b = 0;
@@ -661,7 +659,7 @@ int main(int argc, char** argv)
                                 ("%15.8e\t%15.8e\t%10Ld\t%15.8e\t%15.8e\n")
                                 % fakelag % loglag % dot.dot % dotnormed % bar2;
 
-                        if (dot.dot) if (verbose)  cerr << boost::format
+                        if (verbose && dot.dot) cerr << boost::format
                                 ("curgrain_mi_bins:%12Ld curlag_mi_grains: %12Ld"
                                  "  fakelag: %15.8e  dot: %10Ld  dot/x: %15.8e\n")
                                         % curgrain_mi_bins % curlag_mi_grains 
