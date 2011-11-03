@@ -19,3 +19,6 @@ monaco.o : pakdot.h
 fu = fudge.o
 fudge: $(fu)
 	$(CC) $(fu) -o $@
+
+install : favia
+	cp $+ /usr/bin
