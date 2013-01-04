@@ -46,7 +46,7 @@ pakdot_result_t pakdot(const pakvec pv1, const pakvec pv2)
                         dot_t r = pv1.updata[p1].ordinate 
                                 * pv2.updata[p2].ordinate;
                         rslt.dot += r;
-                        rslt.sum_squares += pow(r, 2);
+                        rslt.sum_squares += r*r;
                 }
                 if (diff <= 0) p1++;
                 if (diff >= 0) p2++;
@@ -81,7 +81,7 @@ pakdot_result_t pbc_pakdot(const pakvec pv1, const pakvec pv2)
                         dot_t r =   pv1.updata[p1].ordinate 
                                 * pv2.updata[p2].ordinate;
                         rslt.dot += r;
-                        rslt.sum_squares += pow(r, 2);
+                        rslt.sum_squares += r*r;
                 }
                 if (diff <= 0) p1++;
                 if (diff >= 0) p2++;
