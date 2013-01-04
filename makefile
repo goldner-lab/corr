@@ -1,24 +1,18 @@
-CC = /usr/bin/g++ -Wall -g
-
+CC = g++
+CFLAGS = -Wall -g ${INCLUDES}
 
 all: favia monaco fudge
 
-f = favia.o pakdot.o Getopt.o
-favia : $(f)
-	$(CC) $(f) -o $@
+favia : favia.o pakdot.o Getopt.o
 
 # dependencies:
 favia.o pakdot.o : pakdot.h
 
-m = monaco.o  Getopt.o
-monaco : $(m)
-	$(CC) $(m) -o $@
+monaco : monaco.o  Getopt.o
 
 monaco.o : pakdot.h
 
-fu = fudge.o
-fudge: $(fu)
-	$(CC) $(fu) -o $@
+fudge: fudge.o
 
 install : favia
 	cp $+ /usr/bin
