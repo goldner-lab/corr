@@ -353,8 +353,10 @@ int main(int argc, char** argv)
         int spikeme(0);
         ostream* ouch(&cout);
 
+#ifdef __GLIBC__
         // Numerical paranoia
         feenableexcept(fegetexcept() | FE_DIVBYZERO | FE_INVALID);
+#endif
 
         // Process commandline options 
         const int ALT(128);
