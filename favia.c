@@ -9,7 +9,7 @@ using namespace std;
 #include <unistd.h>             /* for stat */
 #include "Getopt.h"
 #include <stdlib.h>             /* atoi, getenv */
-#include <values.h>             /* INT_MAX */
+#include <limits.h>             /* INT_MAX */
 #include <math.h>               /* log10() */
 #include <fenv.h>
 
