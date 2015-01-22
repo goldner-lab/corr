@@ -1,5 +1,6 @@
 CC = g++
 CFLAGS = -Wall -g ${INCLUDES}
+PREFIX ?= /usr
 
 all: favia monaco fudge
 
@@ -15,4 +16,4 @@ monaco.o : pakdot.h
 fudge: fudge.o
 
 install : favia
-	cp $+ /usr/bin
+	cp $+ ${PREFIX}/bin
